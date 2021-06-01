@@ -1,6 +1,6 @@
 [package]
 name = "snarkos-benchmarks"
-version = "1.3.6"
+version = "1.3.7"
 authors = [ "The Aleo Team <hello@aleo.org>" ]
 description = "Benchmarks for a decentralized operating system"
 homepage = "https://aleo.org"
@@ -23,24 +23,47 @@ path = "syncing/syncing.rs"
 harness = false
 
 [[bench]]
+name = "merkle"
+path = "merkle/merkle.rs"
+harness = false
+
+[[bench]]
 name = "network"
 path = "network/network.rs"
 harness = false
 
+[dependencies.snarkvm-algorithms]
+version = "0.4.0"
+
+[dependencies.snarkvm-curves]
+version = "0.4.0"
+
+[dependencies.snarkvm-dpc]
+version = "0.5.0"
+
+[dependencies.snarkvm-objects]
+version = "0.4.0"
+
+[dependencies.snarkvm-parameters]
+version = "0.4.0"
+
+[dependencies.snarkvm-posw]
+version = "0.4.0"
+
 [dependencies.snarkvm-utilities]
-version = "0.3.1"
+version = "0.4.0"
 
 [dependencies.snarkos-profiler]
 path = "../profiler"
-version = "1.3.6"
+version = "1.3.7"
 
 [dependencies.snarkos-network]
 path = "../network"
-version = "1.3.6"
+version = "1.3.7"
 
 [dependencies.snarkos-testing]
 path = "../testing"
-version = "1.3.6"
+version = "1.3.7"
 
 [dependencies.csv]
 version = "1"
