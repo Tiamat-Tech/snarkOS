@@ -33,7 +33,7 @@ version = "0.4.0"
 version = "0.4.0"
 
 [dependencies.snarkvm-parameters]
-version = "0.4.0"
+version = "0.5.1"
 
 [dependencies.snarkvm-utilities]
 version = "0.4.0"
@@ -67,6 +67,11 @@ features = [ "derive" ]
 
 [dependencies.thiserror]
 version = "1.0"
+
+[dependencies.tracing]
+default-features = false
+features = [ "log" ]
+version = "0.1"
 
 [dev-dependencies.snarkos-consensus]
 path = "../consensus"
