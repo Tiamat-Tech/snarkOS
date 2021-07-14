@@ -1543,6 +1543,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "metrics"
+version = "0.17.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a00f42f354a2ed4894db863b3a4db47aef2d2e4435b937221749bd37a8a7aaa8"
+dependencies = [
+ "ahash",
+ "metrics-macros",
+ "proc-macro-hack",
+]
+
+[[package]]
 name = "metrics-exporter-prometheus"
 version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1550,7 +1561,7 @@ checksum = "423ac561fc3300388e62947ce7f944ba6d40468afe9916ce5b7774171d8b38b8"
 dependencies = [
  "hyper",
  "ipnet",
- "metrics",
+ "metrics 0.16.0",
  "metrics-util",
  "parking_lot",
  "quanta",
@@ -1585,7 +1596,7 @@ dependencies = [
  "dashmap",
  "hashbrown 0.11.2",
  "indexmap",
- "metrics",
+ "metrics 0.16.0",
  "num_cpus",
  "ordered-float",
  "parking_lot",
@@ -2811,7 +2822,7 @@ dependencies = [
  "fxhash",
  "hex",
  "log",
- "metrics",
+ "metrics 0.17.0",
  "metrics-exporter-prometheus",
  "nalgebra",
  "once_cell",
@@ -2876,7 +2887,7 @@ dependencies = [
  "jsonrpc-core-client",
  "jsonrpc-derive",
  "jsonrpc-test",
- "metrics",
+ "metrics 0.17.0",
  "parking_lot",
  "rand 0.8.3",
  "rustc_version 0.4.0",
