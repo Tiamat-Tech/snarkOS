@@ -1537,9 +1537,19 @@ version = "0.16.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9c0a7fa53d812d26e59d2baf7a6f77442041454ab32908eb304447f00f0dd4de"
 dependencies = [
- "metrics-macros",
+ "metrics-macros 0.4.0",
  "proc-macro-hack",
  "t1ha",
+]
+
+[[package]]
+name = "metrics"
+version = "0.18.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8f601807a248964869e222d209fd5f8e5bcc5542e4c9b1ef21bcee4424868ce5"
+dependencies = [
+ "ahash",
+ "metrics-macros 0.5.0",
 ]
 
 [[package]]
@@ -1550,7 +1560,7 @@ checksum = "423ac561fc3300388e62947ce7f944ba6d40468afe9916ce5b7774171d8b38b8"
 dependencies = [
  "hyper",
  "ipnet",
- "metrics",
+ "metrics 0.16.0",
  "metrics-util",
  "parking_lot",
  "quanta",
@@ -1573,6 +1583,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "metrics-macros"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "44128401debcab0d777da11d005419b4d6ad6da8cb5eea64487c34ee0a311cf5"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
+]
+
+[[package]]
 name = "metrics-util"
 version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1585,7 +1606,7 @@ dependencies = [
  "dashmap",
  "hashbrown 0.11.2",
  "indexmap",
- "metrics",
+ "metrics 0.16.0",
  "num_cpus",
  "ordered-float",
  "parking_lot",
@@ -2811,7 +2832,7 @@ dependencies = [
  "fxhash",
  "hex",
  "log",
- "metrics",
+ "metrics 0.18.0",
  "metrics-exporter-prometheus",
  "nalgebra",
  "once_cell",
@@ -2876,7 +2897,7 @@ dependencies = [
  "jsonrpc-core-client",
  "jsonrpc-derive",
  "jsonrpc-test",
- "metrics",
+ "metrics 0.18.0",
  "parking_lot",
  "rand 0.8.3",
  "rustc_version 0.4.0",
