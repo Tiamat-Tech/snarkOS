@@ -2168,19 +2168,18 @@ dependencies = [
  "libc",
  "rand_chacha 0.2.2",
  "rand_core 0.5.1",
- "rand_hc 0.2.0",
+ "rand_hc",
 ]
 
 [[package]]
 name = "rand"
-version = "0.8.3"
+version = "0.8.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0ef9e7e66b4468674bfcb0c81af8b7fa0bb154fa9f28eb840da5c447baeb8d7e"
+checksum = "34af8d1a0e25924bc5b7c43c079c942339d8f0a8b57c39049bef581b46327404"
 dependencies = [
  "libc",
  "rand_chacha 0.3.1",
  "rand_core 0.6.2",
- "rand_hc 0.3.0",
 ]
 
 [[package]]
@@ -2228,15 +2227,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ca3129af7b92a17112d59ad498c6f81eaf463253766b90396d39ea7a39d6613c"
 dependencies = [
  "rand_core 0.5.1",
-]
-
-[[package]]
-name = "rand_hc"
-version = "0.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3190ef7066a446f2e7f42e239d161e905420ccab01eb967c9eb27d21b2322a73"
-dependencies = [
- "rand_core 0.6.2",
 ]
 
 [[package]]
@@ -2714,7 +2704,7 @@ dependencies = [
  "dirs",
  "hex",
  "parking_lot",
- "rand 0.8.3",
+ "rand 0.8.5",
  "rustc_version 0.4.0",
  "rusty-hook",
  "self_update",
@@ -2743,7 +2733,7 @@ dependencies = [
  "csv",
  "derivative",
  "digest 0.7.6",
- "rand 0.8.3",
+ "rand 0.8.5",
  "rand_xorshift",
  "rayon",
  "smallvec",
@@ -2768,7 +2758,7 @@ dependencies = [
  "criterion",
  "hex",
  "parking_lot",
- "rand 0.8.3",
+ "rand 0.8.5",
  "rand_xorshift",
  "snarkos-profiler",
  "snarkos-storage",
@@ -2817,7 +2807,7 @@ dependencies = [
  "once_cell",
  "parking_lot",
  "peak_alloc",
- "rand 0.8.3",
+ "rand 0.8.5",
  "rustc_version 0.4.0",
  "serde",
  "snarkos-consensus",
@@ -2841,7 +2831,7 @@ dependencies = [
  "curl",
  "hex",
  "parking_lot",
- "rand 0.8.3",
+ "rand 0.8.5",
  "snarkos-consensus",
  "snarkos-storage",
  "snarkvm-algorithms",
@@ -2878,7 +2868,7 @@ dependencies = [
  "jsonrpc-test",
  "metrics",
  "parking_lot",
- "rand 0.8.3",
+ "rand 0.8.5",
  "rustc_version 0.4.0",
  "serde",
  "serde_json",
@@ -2903,7 +2893,7 @@ dependencies = [
  "bincode",
  "hex",
  "parking_lot",
- "rand 0.8.3",
+ "rand 0.8.5",
  "rocksdb",
  "serde",
  "snarkos-consensus",
@@ -2926,7 +2916,7 @@ dependencies = [
  "bincode",
  "once_cell",
  "parking_lot",
- "rand 0.8.3",
+ "rand 0.8.5",
  "rand_xorshift",
  "snarkos-consensus",
  "snarkos-network",
@@ -2953,7 +2943,7 @@ dependencies = [
  "criterion",
  "getrandom 0.2.3",
  "hex",
- "rand 0.8.3",
+ "rand 0.8.5",
  "rand_chacha 0.3.1",
  "snarkvm-algorithms",
  "snarkvm-dpc",
@@ -2974,7 +2964,7 @@ dependencies = [
  "derivative",
  "digest 0.9.0",
  "itertools 0.10.1",
- "rand 0.8.3",
+ "rand 0.8.5",
  "rand_chacha 0.3.1",
  "rayon",
  "sha2",
@@ -2994,7 +2984,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2b1a4b3cb0a68de48d3263a25fa63a3ae14df1f5042fdf536a207b616f1e4217"
 dependencies = [
  "derivative",
- "rand 0.8.3",
+ "rand 0.8.5",
  "rand_xorshift",
  "rustc_version 0.3.3",
  "serde",
@@ -3032,7 +3022,7 @@ dependencies = [
  "hex",
  "itertools 0.10.1",
  "once_cell",
- "rand 0.8.3",
+ "rand 0.8.5",
  "serde",
  "sha2",
  "snarkvm-algorithms",
@@ -3054,7 +3044,7 @@ checksum = "818e32f60d87abbe22e04d44ec358849e78393ae7e0a315334e3402dea909198"
 dependencies = [
  "bincode",
  "derivative",
- "rand 0.8.3",
+ "rand 0.8.5",
  "rand_xorshift",
  "serde",
  "snarkvm-utilities",
@@ -3091,7 +3081,7 @@ dependencies = [
  "derivative",
  "digest 0.9.0",
  "hashbrown 0.11.2",
- "rand 0.8.3",
+ "rand 0.8.5",
  "rand_chacha 0.3.1",
  "rand_core 0.6.2",
  "rayon",
@@ -3144,7 +3134,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d1af4fd2212a3fc46589fc5956c3df9e9d70c2ce22170dfa26a47b035be955d3"
 dependencies = [
  "blake2",
- "rand 0.8.3",
+ "rand 0.8.5",
  "snarkvm-algorithms",
  "snarkvm-curves",
  "snarkvm-dpc",
@@ -3187,7 +3177,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e2c3439bd12599fcaca1d885eb9051c885f2276be2dd0e2692e5f90cc03466f1"
 dependencies = [
  "bincode",
- "rand 0.8.3",
+ "rand 0.8.5",
  "snarkvm-derives",
  "thiserror",
 ]
@@ -3201,7 +3191,7 @@ dependencies = [
  "blake2",
  "byteorder",
  "chacha20poly1305",
- "rand 0.8.3",
+ "rand 0.8.5",
  "rand_core 0.6.2",
  "rustc_version 0.3.3",
  "sha2",
@@ -3301,7 +3291,7 @@ checksum = "dac1c663cfc93810f88aed9b8941d48cabf856a1b111c29a40439018d870eb22"
 dependencies = [
  "cfg-if 1.0.0",
  "libc",
- "rand 0.8.3",
+ "rand 0.8.5",
  "redox_syscall",
  "remove_dir_all",
  "winapi",
@@ -3574,7 +3564,7 @@ dependencies = [
  "httparse",
  "input_buffer",
  "log",
- "rand 0.8.3",
+ "rand 0.8.5",
  "sha-1",
  "url 2.2.2",
  "utf-8",
