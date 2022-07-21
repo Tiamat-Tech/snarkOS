@@ -1537,9 +1537,20 @@ version = "0.16.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9c0a7fa53d812d26e59d2baf7a6f77442041454ab32908eb304447f00f0dd4de"
 dependencies = [
- "metrics-macros",
+ "metrics-macros 0.4.0",
  "proc-macro-hack",
  "t1ha",
+]
+
+[[package]]
+name = "metrics"
+version = "0.20.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "94a70dc6c8179c4e889928dffb92336b821462c7b7613de91304fe80040fec12"
+dependencies = [
+ "ahash",
+ "metrics-macros 0.5.1",
+ "portable-atomic",
 ]
 
 [[package]]
@@ -1550,7 +1561,7 @@ checksum = "423ac561fc3300388e62947ce7f944ba6d40468afe9916ce5b7774171d8b38b8"
 dependencies = [
  "hyper",
  "ipnet",
- "metrics",
+ "metrics 0.16.0",
  "metrics-util",
  "parking_lot",
  "quanta",
@@ -1573,6 +1584,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "metrics-macros"
+version = "0.5.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "49e30813093f757be5cf21e50389a24dc7dbb22c49f23b7e8f51d69b508a5ffa"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
+]
+
+[[package]]
 name = "metrics-util"
 version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1585,7 +1607,7 @@ dependencies = [
  "dashmap",
  "hashbrown 0.11.2",
  "indexmap",
- "metrics",
+ "metrics 0.16.0",
  "num_cpus",
  "ordered-float",
  "parking_lot",
@@ -2006,6 +2028,12 @@ dependencies = [
  "opaque-debug",
  "universal-hash",
 ]
+
+[[package]]
+name = "portable-atomic"
+version = "0.3.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "763095e04dcbeb889b2ab35296ecb18a20fe16b4e9877ce64aab73d8fd05a8c3"
 
 [[package]]
 name = "ppv-lite86"
@@ -2811,7 +2839,7 @@ dependencies = [
  "fxhash",
  "hex",
  "log",
- "metrics",
+ "metrics 0.20.0",
  "metrics-exporter-prometheus",
  "nalgebra",
  "once_cell",
@@ -2876,7 +2904,7 @@ dependencies = [
  "jsonrpc-core-client",
  "jsonrpc-derive",
  "jsonrpc-test",
- "metrics",
+ "metrics 0.20.0",
  "parking_lot",
  "rand 0.8.3",
  "rustc_version 0.4.0",
