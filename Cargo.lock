@@ -2726,7 +2726,7 @@ dependencies = [
  "snarkvm-algorithms",
  "snarkvm-dpc",
  "snarkvm-posw",
- "snarkvm-utilities",
+ "snarkvm-utilities 0.9.10",
  "thiserror",
  "tokio",
  "toml",
@@ -2755,7 +2755,7 @@ dependencies = [
  "snarkvm-dpc",
  "snarkvm-parameters",
  "snarkvm-posw",
- "snarkvm-utilities",
+ "snarkvm-utilities 0.9.10",
  "tokio",
 ]
 
@@ -2777,7 +2777,7 @@ dependencies = [
  "snarkvm-curves",
  "snarkvm-dpc",
  "snarkvm-posw",
- "snarkvm-utilities",
+ "snarkvm-utilities 0.9.10",
  "thiserror",
  "tracing",
  "tracing-subscriber",
@@ -2825,7 +2825,7 @@ dependencies = [
  "snarkos-testing",
  "snarkvm-algorithms",
  "snarkvm-dpc",
- "snarkvm-utilities",
+ "snarkvm-utilities 0.9.10",
  "snow",
  "thiserror",
  "tokio",
@@ -2850,7 +2850,7 @@ dependencies = [
  "snarkvm-marlin",
  "snarkvm-parameters",
  "snarkvm-posw",
- "snarkvm-utilities",
+ "snarkvm-utilities 0.9.10",
 ]
 
 [[package]]
@@ -2889,7 +2889,7 @@ dependencies = [
  "snarkos-toolkit",
  "snarkvm-algorithms",
  "snarkvm-dpc",
- "snarkvm-utilities",
+ "snarkvm-utilities 0.9.10",
  "thiserror",
  "tokio",
  "tracing",
@@ -2913,7 +2913,7 @@ dependencies = [
  "snarkvm-curves",
  "snarkvm-dpc",
  "snarkvm-parameters",
- "snarkvm-utilities",
+ "snarkvm-utilities 0.9.10",
  "thiserror",
  "tracing",
 ]
@@ -2937,7 +2937,7 @@ dependencies = [
  "snarkvm-dpc",
  "snarkvm-parameters",
  "snarkvm-posw",
- "snarkvm-utilities",
+ "snarkvm-utilities 0.9.10",
  "snow",
  "tokio",
  "tracing",
@@ -2957,7 +2957,7 @@ dependencies = [
  "rand_chacha 0.3.1",
  "snarkvm-algorithms",
  "snarkvm-dpc",
- "snarkvm-utilities",
+ "snarkvm-utilities 0.9.10",
  "thiserror",
  "wasm-bindgen",
  "wasm-bindgen-test",
@@ -2983,7 +2983,7 @@ dependencies = [
  "snarkvm-fields",
  "snarkvm-profiler",
  "snarkvm-r1cs",
- "snarkvm-utilities",
+ "snarkvm-utilities 0.5.4",
  "thiserror",
 ]
 
@@ -2999,7 +2999,7 @@ dependencies = [
  "rustc_version 0.3.3",
  "serde",
  "snarkvm-fields",
- "snarkvm-utilities",
+ "snarkvm-utilities 0.5.4",
  "thiserror",
 ]
 
@@ -3042,7 +3042,7 @@ dependencies = [
  "snarkvm-parameters",
  "snarkvm-profiler",
  "snarkvm-r1cs",
- "snarkvm-utilities",
+ "snarkvm-utilities 0.5.4",
  "thiserror",
 ]
 
@@ -3057,7 +3057,7 @@ dependencies = [
  "rand 0.8.3",
  "rand_xorshift",
  "serde",
- "snarkvm-utilities",
+ "snarkvm-utilities 0.5.4",
  "thiserror",
 ]
 
@@ -3077,7 +3077,7 @@ dependencies = [
  "snarkvm-curves",
  "snarkvm-fields",
  "snarkvm-r1cs",
- "snarkvm-utilities",
+ "snarkvm-utilities 0.5.4",
  "thiserror",
 ]
 
@@ -3102,7 +3102,7 @@ dependencies = [
  "snarkvm-polycommit",
  "snarkvm-profiler",
  "snarkvm-r1cs",
- "snarkvm-utilities",
+ "snarkvm-utilities 0.5.4",
 ]
 
 [[package]]
@@ -3114,7 +3114,7 @@ dependencies = [
  "curl",
  "hex",
  "snarkvm-algorithms",
- "snarkvm-utilities",
+ "snarkvm-utilities 0.5.4",
  "thiserror",
 ]
 
@@ -3134,7 +3134,7 @@ dependencies = [
  "snarkvm-gadgets",
  "snarkvm-profiler",
  "snarkvm-r1cs",
- "snarkvm-utilities",
+ "snarkvm-utilities 0.5.4",
 ]
 
 [[package]]
@@ -3155,7 +3155,7 @@ dependencies = [
  "snarkvm-polycommit",
  "snarkvm-profiler",
  "snarkvm-r1cs",
- "snarkvm-utilities",
+ "snarkvm-utilities 0.5.4",
  "thiserror",
 ]
 
@@ -3177,7 +3177,7 @@ dependencies = [
  "itertools 0.10.1",
  "snarkvm-curves",
  "snarkvm-fields",
- "snarkvm-utilities",
+ "snarkvm-utilities 0.5.4",
 ]
 
 [[package]]
@@ -3190,6 +3190,33 @@ dependencies = [
  "rand 0.8.3",
  "snarkvm-derives",
  "thiserror",
+]
+
+[[package]]
+name = "snarkvm-utilities"
+version = "0.9.10"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "10add1d9b3c360603461a9974714f7e0942280cc72df28edfe6f4f0a2b2b82d1"
+dependencies = [
+ "anyhow",
+ "bincode",
+ "num-bigint",
+ "rand 0.8.3",
+ "rand_xorshift",
+ "serde",
+ "snarkvm-utilities-derives",
+ "thiserror",
+]
+
+[[package]]
+name = "snarkvm-utilities-derives"
+version = "0.9.10"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "64872cc1fb4e8304881ce6838f2b2115ed82df3983e8b19ea639bbb2183f540e"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
 ]
 
 [[package]]
