@@ -485,17 +485,17 @@ impl<N: Network, C: ConsensusStorage<N>, R: Routing<N>> Rest<N, C, R> {
         }
 
         // Fall back to the unconfirmed transaction ID.
-        if let Some(unconfirmed) = rest.ledger.try_get_unconfirmed_transaction(tx_id)? {
-            if let Some(reason) = store.get_rejected_reason(&*unconfirmed.id())? {
-                return Ok(Some(reason));
-            }
+        if let Some(unconfirmed) = rest.ledger.try_get_unconfirmed_transaction(tx_id)?
+            && let Some(reason) = store.get_rejected_reason(&*unconfirmed.id())?
+        {
+            return Ok(Some(reason));
         }
 
         // Fall back to the confirmed (fee) transaction ID.
-        if let Some(confirmed) = rest.ledger.try_get_confirmed_transaction(tx_id)? {
-            if let Some(reason) = store.get_rejected_reason(&*confirmed.id())? {
-                return Ok(Some(reason));
-            }
+        if let Some(confirmed) = rest.ledger.try_get_confirmed_transaction(tx_id)?
+            && let Some(reason) = store.get_rejected_reason(&*confirmed.id())?
+        {
+            return Ok(Some(reason));
         }
 
         Ok(None)
@@ -1367,7 +1367,7 @@ impl<N: Network, C: ConsensusStorage<N>, R: Routing<N>> Rest<N, C, R> {
 
     /// GET /{network}/validators/participation
     /// GET /{network}/validators/participation?metadata={true}
-    #[cfg(feature = "telemetry")]
+    #[cfg(feature = "metrics")]
     pub(crate) async fn get_validator_participation_scores(
         State(rest): State<Self>,
         metadata: Query<Metadata>,

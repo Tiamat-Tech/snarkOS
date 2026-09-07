@@ -13,7 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#[cfg(feature = "telemetry")]
+#[cfg(feature = "metrics")]
 use crate::helpers::{Telemetry, TelemetryWorker};
 use crate::{
     CONTEXT,
@@ -229,13 +229,13 @@ pub struct InnerGateway<N: Network> {
     /// The collection of both candidate and connected peers.
     peer_pool: RwLock<HashMap<SocketAddr, Peer<N>>>,
     /// The handle to the validator telemetry tracker.
-    #[cfg(feature = "telemetry")]
+    #[cfg(feature = "metrics")]
     validator_telemetry: Telemetry<N>,
     /// The telemetry worker, taken and spawned by `run`.
     ///
     /// This is a one-shot handoff from `new` to `run`, not a hot-path lock: the telemetry
     /// state itself lives in the worker task, and is never shared.
-    #[cfg(feature = "telemetry")]
+    #[cfg(feature = "metrics")]
     telemetry_worker: Mutex<Option<TelemetryWorker<N>>>,
     /// The primary sender.
     primary_sender: OnceCell<PrimarySender<N>>,
@@ -331,7 +331,7 @@ impl<N: Network> Gateway<N> {
         initial_peers.extend(trusted_validators.iter().copied().map(|addr| (addr, Peer::new_candidate(addr, true))));
 
         // Initialize the validator telemetry. The worker is spawned later, by `run`.
-        #[cfg(feature = "telemetry")]
+        #[cfg(feature = "metrics")]
         let (validator_telemetry, telemetry_worker) = Telemetry::new();
 
         // Return the gateway.
@@ -343,9 +343,9 @@ impl<N: Network> Gateway<N> {
             cache: Default::default(),
             resolver: Default::default(),
             peer_pool: RwLock::new(initial_peers),
-            #[cfg(feature = "telemetry")]
+            #[cfg(feature = "metrics")]
             validator_telemetry,
-            #[cfg(feature = "telemetry")]
+            #[cfg(feature = "metrics")]
             telemetry_worker: Mutex::new(Some(telemetry_worker)),
             primary_sender: Default::default(),
             worker_senders: Default::default(),
@@ -382,7 +382,7 @@ impl<N: Network> Gateway<N> {
 
         // Spawn the validator telemetry worker, which owns all telemetry state.
         // It is registered in `handles`, so `shut_down` aborts it along with everything else.
-        #[cfg(feature = "telemetry")]
+        #[cfg(feature = "metrics")]
         if let Some(telemetry_worker) = self.telemetry_worker.lock().take() {
             self.spawn(telemetry_worker.run());
         }
@@ -495,7 +495,7 @@ impl<N: Network> Gateway<N> {
     }
 
     /// Returns the validator telemetry.
-    #[cfg(feature = "telemetry")]
+    #[cfg(feature = "metrics")]
     pub fn validator_telemetry(&self) -> &Telemetry<N> {
         &self.validator_telemetry
     }
@@ -1019,7 +1019,7 @@ impl<N: Network> Gateway<N> {
         // Log the connected validators.
         self.log_connected_validators();
         // Log the validator participation scores.
-        #[cfg(feature = "telemetry")]
+        #[cfg(feature = "metrics")]
         self.log_participation_scores();
         // Keep the trusted validators connected.
         self.handle_trusted_validators();
@@ -1149,7 +1149,7 @@ impl<N: Network> Gateway<N> {
     }
 
     // Logs the validator participation scores.
-    #[cfg(feature = "telemetry")]
+    #[cfg(feature = "metrics")]
     fn log_participation_scores(&self) {
         if let Ok(committee_lookback) = self.ledger.get_committee_lookback_for_round(self.storage.current_round()) {
             // Retrieve the participation scores.
@@ -1572,15 +1572,13 @@ impl<N: Network> Disconnect for Gateway<N> {
 #[async_trait]
 impl<N: Network> OnConnect for Gateway<N> {
     async fn on_connect(&self, peer_addr: SocketAddr) {
-        if let Some(listener_addr) = self.resolve_to_listener(&peer_addr) {
-            if let Some(peer) = self.get_connected_peer(listener_addr) {
-                if peer.node_type == NodeType::BootstrapClient {
-                    self.cache.increment_outbound_validators_requests(listener_addr);
-                    let _ =
-                        <Self as Transport<N>>::send(self, listener_addr, Event::ValidatorsRequest(ValidatorsRequest))
-                            .await;
-                }
-            }
+        if let Some(listener_addr) = self.resolve_to_listener(&peer_addr)
+            && let Some(peer) = self.get_connected_peer(listener_addr)
+            && peer.node_type == NodeType::BootstrapClient
+        {
+            self.cache.increment_outbound_validators_requests(listener_addr);
+            let _ =
+                <Self as Transport<N>>::send(self, listener_addr, Event::ValidatorsRequest(ValidatorsRequest)).await;
         }
     }
 }

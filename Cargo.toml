@@ -15,7 +15,7 @@ keywords = [
 categories = [ "cryptography", "cryptography::cryptocurrencies", "os" ]
 license = "Apache-2.0"
 edition = "2024"
-rust-version = "1.88.0" # Attention - Change the MSRV in rust-toolchain and in .circleci/config.yml as well
+rust-version = "1.96.0" # Attention - Change the MSRV in rust-toolchain and in .circleci/config.yml as well
 
 [workspace]
 members = [
@@ -48,7 +48,7 @@ default-features = false
 [workspace.dependencies.snarkvm]
 #path = "../snarkVM"
 git = "https://github.com/ProvableHQ/snarkVM.git"
-rev = "7c302e635" #staging
+rev = "e0f68fae" #staging
 #version = "=4.9.0"
 default-features = false
 
@@ -87,6 +87,11 @@ features = [ "std" ]
 
 [workspace.dependencies.colored]
 version = "3"
+
+[workspace.dependencies.criterion]
+version = "0.7"
+default-features = false
+features = [ "cargo_bench_support" ]
 
 [workspace.dependencies.crossterm]
 version = "0.29"
@@ -276,11 +281,13 @@ name = "snarkos"
 path = "snarkos/main.rs"
 
 [features]
-default = [ "snarkos-cli/metrics", "snarkos-node-metrics", "snarkos-node/metrics", "snarkos-node-cdn/metrics", "telemetry" ]
+default = [ "snarkos-cli/metrics", "snarkos-node-metrics", "snarkos-node/metrics", "snarkos-node-cdn/metrics" ]
 history = [ "snarkos-node/history" ]
 history-staking-rewards = [ "snarkos-node/history-staking-rewards" ]
 slipstream-plugins = [ "snarkos-node/slipstream-plugins", "snarkos-cli/slipstream-plugins" ]
-telemetry = [ "snarkos-node/telemetry" ]
+# Deprecated alias for the metrics feature, which now carries the validator telemetry.
+# Retained so that build commands naming this feature keep resolving.
+telemetry = [ "snarkos-node/metrics" ]
 cuda = [
   "snarkos-account/cuda",
   "snarkos-cli/cuda",

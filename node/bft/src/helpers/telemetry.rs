@@ -164,10 +164,7 @@ impl<N: Network> CertificateMetadata<N> {
     /// Derives the telemetry metadata for the given certificate.
     fn new(certificate: &BatchCertificate<N>) -> Self {
         let author = certificate.author();
-        let signers = [author]
-            .into_iter()
-            .chain(certificate.signatures().map(|signature| signature.to_address()))
-            .collect::<Vec<_>>();
+        let signers = [author].into_iter().chain(certificate.signers().iter().copied()).collect::<Vec<_>>();
 
         Self { round: certificate.round(), id: certificate.id(), author, signers }
     }
@@ -183,9 +180,9 @@ enum TelemetryUpdate<N: Network> {
     Subdag { gc_round: u64, metadata: Vec<CertificateMetadata<N>> },
     /// Insert the metadata of a single certificate.
     ///
-    /// Only [`Telemetry::insert_certificate`] produces this, which is itself test-only, so the
-    /// variant is gated the same way rather than sitting unconstructable in a release build.
-    #[cfg(test)]
+    /// Only ever sent by the `#[cfg(test)]`-only `insert_certificate`, so a non-test build
+    /// never constructs it - hence the `allow` below.
+    #[cfg_attr(not(test), allow(dead_code))]
     Certificate(Box<CertificateMetadata<N>>),
     /// Acknowledge once every previously enqueued update has been applied and published.
     Flush(oneshot::Sender<()>),
@@ -438,7 +435,6 @@ impl<N: Network> TelemetryWorker<N> {
                         self.gc_round = self.gc_round.max(gc_round);
                         recompute = true;
                     }
-                    #[cfg(test)]
                     TelemetryUpdate::Certificate(metadata) => {
                         // Deliberately leaves `recompute` alone. A lone certificate barely moves
                         // the scores, and the next subdag recomputes and republishes them, so the
