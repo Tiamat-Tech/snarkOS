@@ -97,8 +97,8 @@ impl<N: Network> StorageService<N> for BFTMemoryService<N> {
                         // note: `self.contains_retrievable_transmission` would deadlock here; it
                         // read-locks `self.transmissions`, which is write-locked above.
                         if !aborted_transmission_ids.contains(&transmission_id) {
-                            // An ID that storage already knows as aborted needs no bytes from
-                            // anyone, but this certificate still has to be counted against the
+                            // An ID that storage already knows as aborted needs no bytes to be
+                            // inserted, but this certificate still has to be counted against the
                             // aborted entry: `remove_transmissions` decrements it either way.
                             if aborted_transmission_ids_lock.contains_key(&transmission_id) {
                                 aborted_transmission_ids.insert(transmission_id);

@@ -679,10 +679,12 @@ impl<N: Network> proposal_task::BatchPropose for Primary<N> {
                 // Check if storage already knows the transmission, either way.
                 //
                 // This is the one place that wants both states: a transmission already in storage is
-                // already in the DAG, and an ID storage knows only as aborted holds no transmission
-                // to hand back, so proposing it would commit the batch to something peers cannot
-                // materialize. Both are skipped unconditionally - proposing an empty batch is valid,
-                // so there is no need to make an exception for the first transmission.
+                // already in the DAG, and an ID storage knows only as aborted was already decided by
+                // a block, so re-proposing it yields a certificate that storage cannot serve at
+                // commit time - the aborted marker answers the containment check, but
+                // `get_transmission` still has nothing to hand back. Both are skipped
+                // unconditionally - proposing an empty batch is valid, so there is no need to make
+                // an exception for the first transmission.
                 if self.storage.contains_retrievable_transmission(id) || self.storage.contains_aborted_transmission(id)
                 {
                     trace!("Proposing - Skipping transmission '{}' - Already in storage", fmt_id(id));
@@ -2020,8 +2022,8 @@ impl<N: Network> Primary<N> {
             // holds no payload for it, so treating the aborted marker as "already have it" would
             // accept a certificate committing to a transmission this node can never materialize.
             // A batch is an availability claim by its author, so ask for the bytes rather than
-            // excuse them - the author can serve them, and a certificate carries `2f + 1` such
-            // claims, so an honest peer holds them even if this one does not.
+            // excuse them; the request goes to that author, which is the peer claiming to hold
+            // them. If it cannot serve them, the fetch fails and the batch is not signed.
             if !self.storage.contains_retrievable_transmission(*transmission_id) {
                 // Determine the worker ID.
                 let Ok(worker_id) = assign_to_worker(*transmission_id, num_workers) else {
@@ -2468,9 +2470,10 @@ mod tests {
         assert!(primary.proposed_batch.read().is_proposed());
     }
 
-    /// A transmission that storage only knows as aborted holds no bytes for peers to materialize, so
-    /// it must be skipped when proposing - including when it is the first item drained from the
-    /// worker, which used to bypass the storage check entirely.
+    /// A transmission that storage only knows as aborted was already decided by a block, and storage
+    /// has nothing to hand back for it at commit time, so it must be skipped when proposing -
+    /// including when it is the first item drained from the worker, which used to bypass the storage
+    /// check entirely.
     #[test_log::test(tokio::test)]
     async fn test_propose_batch_skips_an_aborted_first_transmission() {
         let mut rng = TestRng::default();

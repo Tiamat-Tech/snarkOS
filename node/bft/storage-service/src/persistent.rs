@@ -162,8 +162,8 @@ impl<N: Network> StorageService<N> for BFTPersistentStorage<N> {
                         // asking whether storage knows the ID at all - without repeating the
                         // lookup that just came back empty.
                         if !aborted_transmission_ids.contains(&transmission_id) {
-                            // An ID that storage already knows as aborted needs no bytes from
-                            // anyone, but this certificate still has to be counted against the
+                            // An ID that storage already knows as aborted needs no bytes to be
+                            // inserted, but this certificate still has to be counted against the
                             // aborted entry: `remove_transmissions` decrements it either way.
                             if self.contains_aborted_transmission(transmission_id) {
                                 aborted_transmission_ids.insert(transmission_id);

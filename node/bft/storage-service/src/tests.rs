@@ -287,8 +287,8 @@ fn check_an_already_aborted_id_is_counted_against_a_later_certificate(service: &
 /// An ID that storage does not know at all is not recorded as aborted on the way past.
 ///
 /// The counting above applies only to an ID storage already recorded as aborted; a declared ID that
-/// nobody can produce is undeliverable, and must not be turned into an aborted entry that would
-/// answer for it.
+/// neither storage nor the caller can produce is undeliverable, and must not be turned into an
+/// aborted entry that would answer for it.
 fn check_an_unknown_undeliverable_id_is_not_recorded_as_aborted(service: &impl StorageService<CurrentNetwork>) {
     let rng = &mut TestRng::default();
     let transmission_id = sample_transmission_id(rng);
@@ -381,11 +381,12 @@ fn check_find_missing_transmissions_accepts_a_declared_aborted_id(service: &impl
     assert!(result.is_empty());
 }
 
-/// An ID that storage already recorded as aborted needs neither bytes nor a fresh declaration:
-/// there is nothing to fetch, because no peer holds a transmission for an aborted ID either.
+/// An ID that storage already recorded as aborted needs neither bytes nor a fresh declaration: the
+/// marker is enough for the service to accept it.
 ///
 /// Only the caller that has the block can declare the ID itself; a batch proposed or certified by a
-/// peer arrives with an empty set of aborted IDs.
+/// peer arrives with an empty set of aborted IDs. Whether a peer can still serve the bytes is the
+/// caller's question, not this one's.
 fn check_find_missing_transmissions_accepts_an_already_aborted_id_without_bytes(
     service: &impl StorageService<CurrentNetwork>,
 ) {

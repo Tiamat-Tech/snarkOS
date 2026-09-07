@@ -34,8 +34,8 @@ pub trait StorageService<N: Network>: Debug + Send + Sync {
     ///
     /// Note: there is deliberately no single query for "storage knows this ID, either way". The two
     /// states answer different questions, and conflating them is what let a batch be certified
-    /// while committing to a transmission that nobody can produce, so a caller that genuinely wants
-    /// both has to name both.
+    /// while committing to a transmission that storage cannot hand back, so a caller that genuinely
+    /// wants both has to name both.
     fn contains_retrievable_transmission(&self, transmission_id: TransmissionID<N>) -> bool;
 
     /// Returns `true` if the specified `transmission ID` is recorded as aborted.
@@ -55,10 +55,13 @@ pub trait StorageService<N: Network>: Debug + Send + Sync {
     /// Takes a batch header and the transmissions provided for it, and returns the subset of those
     /// transmissions that the storage does not already hold.
     ///
-    /// A transmission that cannot be retrieved from storage has to be provided by the caller, or be
-    /// aborted - either as declared by the caller, or as already recorded in storage, in which case
-    /// there are no bytes to be had from anyone. Anything else is an error: a peer does not get to
-    /// have a certificate accepted while withholding a transmission that it commits to.
+    /// A transmission that cannot be retrieved from this storage must either be provided by the
+    /// caller or be classified as aborted, whether declared by the caller or already recorded in
+    /// storage. Anything else is an error: a peer does not get to have a certificate accepted while
+    /// withholding a transmission that it commits to.
+    ///
+    /// An aborted marker only means that this storage has no payload for that entry; it does not
+    /// imply that a peer cannot provide the bytes.
     fn find_missing_transmissions(
         &self,
         batch_header: &BatchHeader<N>,
@@ -81,7 +84,8 @@ pub trait StorageService<N: Network>: Debug + Send + Sync {
                     }
                     // If the transmission does not exist, it must be aborted: either the caller
                     // declares it as such, or storage already recorded it as aborted for an earlier
-                    // certificate - in which case there are no bytes to be had from anyone.
+                    // certificate. Note that this accepts the ID without bytes; obtaining them, if
+                    // a peer has them, is the caller's business - see `fetch_missing_transmissions`.
                     None => {
                         if !aborted_transmissions.contains(transmission_id)
                             && !self.contains_aborted_transmission(*transmission_id)

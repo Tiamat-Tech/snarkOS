@@ -307,7 +307,7 @@ impl<N: Network> Storage<N> {
     /// This is `false` for a transmission ID that storage knows only as aborted, which holds no
     /// transmission; see [`Self::contains_aborted_transmission`]. There is deliberately no single
     /// query for "known either way": conflating the two is what let a batch be certified while
-    /// committing to a transmission that nobody can produce.
+    /// committing to a transmission that storage cannot hand back.
     pub fn contains_retrievable_transmission(&self, transmission_id: impl Into<TransmissionID<N>>) -> bool {
         self.transmissions.contains_retrievable_transmission(transmission_id.into())
     }
