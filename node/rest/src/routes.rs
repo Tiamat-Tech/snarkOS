@@ -118,13 +118,50 @@ where
     Ok(if s.trim().is_empty() { Vec::new() } else { s.split(',').map(|x| x.trim().to_string()).collect() })
 }
 
-/// The `get_blocks` query object.
-#[derive(Deserialize, Serialize)]
+/// The query object for the routes serving a range of block heights.
+#[derive(Copy, Clone, Deserialize, Serialize)]
 pub(crate) struct BlockRange {
     /// The starting block height (inclusive).
     start: u32,
     /// The ending block height (exclusive).
     end: u32,
+}
+
+/// The maximum number of blocks that `get_blocks` serves in one request.
+const MAX_BLOCK_RANGE: u32 = 50;
+
+/// The maximum number of block hashes that `get_block_hashes` serves in one request.
+const MAX_BLOCK_HASH_RANGE: u32 = 5_000;
+
+/// The maximum number of block headers that `get_block_headers` serves in one request.
+const MAX_BLOCK_HEADER_RANGE: u32 = 320;
+
+/// The maximum number of state roots that `get_block_state_roots` serves in one request.
+const MAX_STATE_ROOT_RANGE: u32 = 5_000;
+
+/// Validates a block range against the given maximum, and returns `(start, end)`.
+///
+/// Each route serving a range picks its own maximum, sized so that the largest response it can
+/// produce stays on the order of a single block. A block hash and a header are several orders of
+/// magnitude smaller than the block they belong to, so applying the `get_blocks` maximum to them
+/// would bound those responses far below what the node already serves in one request.
+fn check_block_range(block_range: BlockRange, max_block_range: u32) -> Result<(u32, u32), RestError> {
+    let (start_height, end_height) = (block_range.start, block_range.end);
+
+    // Ensure the end height is greater than the start height.
+    if start_height > end_height {
+        return Err(RestError::bad_request(anyhow!("Invalid block range")));
+    }
+
+    // Ensure the block range is bounded.
+    if end_height - start_height > max_block_range {
+        return Err(RestError::bad_request(anyhow!(
+            "Cannot request more than {max_block_range} blocks per call (requested {})",
+            end_height - start_height
+        )));
+    }
+
+    Ok((start_height, end_height))
 }
 
 #[derive(Deserialize, Serialize)]
@@ -278,23 +315,7 @@ impl<N: Network, C: ConsensusStorage<N>, R: Routing<N>> Rest<N, C, R> {
         State(rest): State<Self>,
         Query(block_range): Query<BlockRange>,
     ) -> Result<ErasedJson, RestError> {
-        let start_height = block_range.start;
-        let end_height = block_range.end;
-
-        const MAX_BLOCK_RANGE: u32 = 50;
-
-        // Ensure the end height is greater than the start height.
-        if start_height > end_height {
-            return Err(RestError::bad_request(anyhow!("Invalid block range")));
-        }
-
-        // Ensure the block range is bounded.
-        if end_height - start_height > MAX_BLOCK_RANGE {
-            return Err(RestError::bad_request(anyhow!(
-                "Cannot request more than {MAX_BLOCK_RANGE} blocks per call (requested {})",
-                end_height - start_height
-            )));
-        }
+        let (start_height, end_height) = check_block_range(block_range, MAX_BLOCK_RANGE)?;
 
         // Prepare a closure for the blocking work.
         let get_json_blocks = move || -> Result<ErasedJson, RestError> {
@@ -313,6 +334,111 @@ impl<N: Network, C: ConsensusStorage<N>, R: Routing<N>> Rest<N, C, R> {
 
                 Err(RestError::internal_server_error(
                     err.context(format!("Failed to get blocks '{start_height}..{end_height}'")),
+                ))
+            }
+        }
+    }
+
+    /// GET /<network>/blocks/hashes?start={start_height}&end={end_height}
+    pub(crate) async fn get_block_hashes(
+        State(rest): State<Self>,
+        Query(block_range): Query<BlockRange>,
+    ) -> Result<ErasedJson, RestError> {
+        let (start_height, end_height) = check_block_range(block_range, MAX_BLOCK_HASH_RANGE)?;
+
+        // Prepare a closure for the blocking work.
+        //
+        // Unlike `get_blocks`, this stays sequential: each height is a single point lookup in the
+        // block ID map, which is cheaper than the work of handing it to another thread, and this
+        // range is large enough that saturating the rayon pool would contend with consensus.
+        let get_json_hashes = move || -> Result<ErasedJson, RestError> {
+            let hashes = (start_height..end_height)
+                .map(|height| rest.ledger.get_hash(height).map_err(map_missing_resource_error))
+                .collect::<Result<Vec<_>, _>>()?;
+
+            Ok(ErasedJson::pretty(hashes))
+        };
+
+        // Fetch the block hashes from the ledger and serialize to json.
+        match tokio::task::spawn_blocking(get_json_hashes).await {
+            Ok(json) => json,
+            Err(err) => {
+                let err: anyhow::Error = err.into();
+
+                Err(RestError::internal_server_error(
+                    err.context(format!("Failed to get block hashes '{start_height}..{end_height}'")),
+                ))
+            }
+        }
+    }
+
+    /// GET /<network>/blocks/headers?start={start_height}&end={end_height}
+    pub(crate) async fn get_block_headers(
+        State(rest): State<Self>,
+        Query(block_range): Query<BlockRange>,
+    ) -> Result<ErasedJson, RestError> {
+        let (start_height, end_height) = check_block_range(block_range, MAX_BLOCK_HEADER_RANGE)?;
+
+        // Prepare a closure for the blocking work. Each height is two point lookups: the block ID
+        // map, then the header map. See `get_block_hashes` for why this is sequential.
+        let get_json_headers = move || -> Result<ErasedJson, RestError> {
+            let headers = (start_height..end_height)
+                .map(|height| rest.ledger.get_header(height).map_err(map_missing_resource_error))
+                .collect::<Result<Vec<_>, _>>()?;
+
+            Ok(ErasedJson::pretty(headers))
+        };
+
+        // Fetch the block headers from the ledger and serialize to json.
+        match tokio::task::spawn_blocking(get_json_headers).await {
+            Ok(json) => json,
+            Err(err) => {
+                let err: anyhow::Error = err.into();
+
+                Err(RestError::internal_server_error(
+                    err.context(format!("Failed to get block headers '{start_height}..{end_height}'")),
+                ))
+            }
+        }
+    }
+
+    /// GET /<network>/blocks/stateRoots?start={start_height}&end={end_height}
+    ///
+    /// Each entry is the state root *after* the block at that height, matching the singular
+    /// `/stateRoot/{height}` route. Note that this is not the root a header carries: a header holds
+    /// `previous_state_root`, so the root for height `h` appears in the header of height `h + 1`.
+    pub(crate) async fn get_block_state_roots(
+        State(rest): State<Self>,
+        Query(block_range): Query<BlockRange>,
+    ) -> Result<ErasedJson, RestError> {
+        let (start_height, end_height) = check_block_range(block_range, MAX_STATE_ROOT_RANGE)?;
+
+        // Prepare a closure for the blocking work. The state root map is keyed by height directly,
+        // so each height is a single point lookup. See `get_block_hashes` for why this is
+        // sequential.
+        let get_json_state_roots = move || -> Result<ErasedJson, RestError> {
+            let state_roots = (start_height..end_height)
+                .map(|height| {
+                    // Unlike the other getters, this one reports a missing height as `None` rather
+                    // than as an error, so translate it to stay consistent with the other routes.
+                    rest.ledger
+                        .get_state_root(height)
+                        .map_err(RestError::from)?
+                        .ok_or_else(|| RestError::not_found(anyhow!("Missing state root for block {height}")))
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+
+            Ok(ErasedJson::pretty(state_roots))
+        };
+
+        // Fetch the state roots from the ledger and serialize to json.
+        match tokio::task::spawn_blocking(get_json_state_roots).await {
+            Ok(json) => json,
+            Err(err) => {
+                let err: anyhow::Error = err.into();
+
+                Err(RestError::internal_server_error(
+                    err.context(format!("Failed to get state roots '{start_height}..{end_height}'")),
                 ))
             }
         }
@@ -1549,5 +1675,92 @@ mod route_error_tests {
         let err = map_missing_resource_error(anyhow::anyhow!(message));
         assert_eq!(err, StatusCode::INTERNAL_SERVER_ERROR);
         assert_eq!(err.to_string(), message);
+    }
+}
+
+#[cfg(test)]
+mod range_tests {
+    use super::*;
+
+    const MAX: u32 = 50;
+
+    fn range(start: u32, end: u32) -> BlockRange {
+        BlockRange { start, end }
+    }
+
+    #[test]
+    fn accepts_a_range_within_the_maximum() {
+        assert_eq!(check_block_range(range(10, 20), MAX).unwrap(), (10, 20));
+    }
+
+    #[test]
+    fn accepts_a_range_of_exactly_the_maximum() {
+        assert_eq!(check_block_range(range(10, 10 + MAX), MAX).unwrap(), (10, 10 + MAX));
+    }
+
+    #[test]
+    fn accepts_an_empty_range() {
+        assert_eq!(check_block_range(range(10, 10), MAX).unwrap(), (10, 10));
+    }
+
+    #[test]
+    fn rejects_an_inverted_range() {
+        // This must be rejected before the width check, which would otherwise underflow.
+        let err = check_block_range(range(20, 10), MAX).unwrap_err();
+        assert_eq!(err, StatusCode::BAD_REQUEST);
+    }
+
+    #[test]
+    fn rejects_a_range_over_the_maximum() {
+        let err = check_block_range(range(10, 11 + MAX), MAX).unwrap_err();
+        assert_eq!(err, StatusCode::BAD_REQUEST);
+    }
+
+    #[test]
+    fn rejects_a_range_spanning_the_whole_height_space() {
+        let err = check_block_range(range(0, u32::MAX), MAX).unwrap_err();
+        assert_eq!(err, StatusCode::BAD_REQUEST);
+    }
+
+    /// The json size of one item of each kind, measured on mainnet block 21,815,000. A header is
+    /// rounded up to 1 KiB to cover both pretty-printing and the blocks whose `solutions_root` is
+    /// populated, which the measured block's was not.
+    const BLOCK_HASH_BYTES: u32 = 63;
+    const STATE_ROOT_BYTES: u32 = 63;
+    const BLOCK_HEADER_BYTES: u32 = 1_024;
+    const BLOCK_BYTES: u32 = 337_511;
+
+    #[test]
+    fn each_maximum_bounds_its_response_to_at_most_one_block() {
+        // Every route added here serves a projection of a block, so none of them should be able to
+        // produce a response larger than the single block `get_blocks` already serves. If a
+        // maximum is raised past that point, it is no longer free from the node's perspective.
+        let largest_get_blocks_response = MAX_BLOCK_RANGE * BLOCK_BYTES;
+
+        for (name, max, item_bytes) in [
+            ("hashes", MAX_BLOCK_HASH_RANGE, BLOCK_HASH_BYTES),
+            ("headers", MAX_BLOCK_HEADER_RANGE, BLOCK_HEADER_BYTES),
+            ("stateRoots", MAX_STATE_ROOT_RANGE, STATE_ROOT_BYTES),
+        ] {
+            let largest_response = max * item_bytes;
+            assert!(
+                largest_response <= BLOCK_BYTES,
+                "the {name} maximum can serve {largest_response} bytes, more than the {BLOCK_BYTES} bytes of one block"
+            );
+            assert!(largest_response < largest_get_blocks_response);
+        }
+    }
+
+    #[test]
+    fn each_maximum_improves_on_fetching_whole_blocks() {
+        // The point of these routes is that syncing a projection over the whole chain costs far
+        // fewer requests than syncing the blocks that contain it. Guard that they are worth having.
+        for (name, max) in [
+            ("hashes", MAX_BLOCK_HASH_RANGE),
+            ("headers", MAX_BLOCK_HEADER_RANGE),
+            ("stateRoots", MAX_STATE_ROOT_RANGE),
+        ] {
+            assert!(max > MAX_BLOCK_RANGE, "the {name} maximum is no better than fetching whole blocks");
+        }
     }
 }
