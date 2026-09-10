@@ -129,5 +129,17 @@ workspace = true
 version = "0.5"
 features = ["util"]
 
+[dev-dependencies.snarkos-node-bft-ledger-service]
+workspace = true
+features = [ "mock" ]
+
+[dev-dependencies.snarkos-node-router]
+workspace = true
+features = [ "test-helpers" ]
+
+[dev-dependencies.snarkvm]
+workspace = true
+features = [ "test-helpers" ]
+
 [build-dependencies.built]
 workspace = true

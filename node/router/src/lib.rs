@@ -43,6 +43,9 @@ pub use outbound::*;
 mod routing;
 pub use routing::*;
 
+#[cfg(feature = "test-helpers")]
+pub mod test_helpers;
+
 mod writing;
 
 use crate::messages::{BlockRequest, Message, MessageCodec};
