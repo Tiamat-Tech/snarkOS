@@ -145,7 +145,11 @@ const MAX_STATE_ROOT_RANGE: u32 = 5_000;
 /// produce stays on the order of a single block. A block hash and a header are several orders of
 /// magnitude smaller than the block they belong to, so applying the `get_blocks` maximum to them
 /// would bound those responses far below what the node already serves in one request.
-fn check_block_range(block_range: BlockRange, max_block_range: u32) -> Result<(u32, u32), RestError> {
+///
+/// `item` names what the route serves, so that a caller who exceeds the maximum is told the limit
+/// in the unit it applies to. On the default and `/v1` prefixes this text is the only diagnostic
+/// the caller receives, since `v1_error_middleware` replaces the status code.
+fn check_block_range(block_range: BlockRange, max_block_range: u32, item: &str) -> Result<(u32, u32), RestError> {
     let (start_height, end_height) = (block_range.start, block_range.end);
 
     // Ensure the end height is greater than the start height.
@@ -156,7 +160,7 @@ fn check_block_range(block_range: BlockRange, max_block_range: u32) -> Result<(u
     // Ensure the block range is bounded.
     if end_height - start_height > max_block_range {
         return Err(RestError::bad_request(anyhow!(
-            "Cannot request more than {max_block_range} blocks per call (requested {})",
+            "Cannot request more than {max_block_range} {item} per call (requested {})",
             end_height - start_height
         )));
     }
@@ -315,7 +319,7 @@ impl<N: Network, C: ConsensusStorage<N>, R: Routing<N>> Rest<N, C, R> {
         State(rest): State<Self>,
         Query(block_range): Query<BlockRange>,
     ) -> Result<ErasedJson, RestError> {
-        let (start_height, end_height) = check_block_range(block_range, MAX_BLOCK_RANGE)?;
+        let (start_height, end_height) = check_block_range(block_range, MAX_BLOCK_RANGE, "blocks")?;
 
         // Prepare a closure for the blocking work.
         let get_json_blocks = move || -> Result<ErasedJson, RestError> {
@@ -340,11 +344,14 @@ impl<N: Network, C: ConsensusStorage<N>, R: Routing<N>> Rest<N, C, R> {
     }
 
     /// GET /<network>/blocks/hashes?start={start_height}&end={end_height}
+    ///
+    /// `start` is inclusive and `end` is exclusive, as in `get_blocks`, so `start == end` returns
+    /// an empty array rather than the hash at that height.
     pub(crate) async fn get_block_hashes(
         State(rest): State<Self>,
         Query(block_range): Query<BlockRange>,
     ) -> Result<ErasedJson, RestError> {
-        let (start_height, end_height) = check_block_range(block_range, MAX_BLOCK_HASH_RANGE)?;
+        let (start_height, end_height) = check_block_range(block_range, MAX_BLOCK_HASH_RANGE, "block hashes")?;
 
         // Prepare a closure for the blocking work.
         //
@@ -373,11 +380,13 @@ impl<N: Network, C: ConsensusStorage<N>, R: Routing<N>> Rest<N, C, R> {
     }
 
     /// GET /<network>/blocks/headers?start={start_height}&end={end_height}
+    ///
+    /// `start` is inclusive and `end` is exclusive, as in `get_blocks`.
     pub(crate) async fn get_block_headers(
         State(rest): State<Self>,
         Query(block_range): Query<BlockRange>,
     ) -> Result<ErasedJson, RestError> {
-        let (start_height, end_height) = check_block_range(block_range, MAX_BLOCK_HEADER_RANGE)?;
+        let (start_height, end_height) = check_block_range(block_range, MAX_BLOCK_HEADER_RANGE, "block headers")?;
 
         // Prepare a closure for the blocking work. Each height is two point lookups: the block ID
         // map, then the header map. See `get_block_hashes` for why this is sequential.
@@ -404,14 +413,22 @@ impl<N: Network, C: ConsensusStorage<N>, R: Routing<N>> Rest<N, C, R> {
 
     /// GET /<network>/blocks/stateRoots?start={start_height}&end={end_height}
     ///
-    /// Each entry is the state root *after* the block at that height, matching the singular
-    /// `/stateRoot/{height}` route. Note that this is not the root a header carries: a header holds
-    /// `previous_state_root`, so the root for height `h` appears in the header of height `h + 1`.
+    /// `start` is inclusive and `end` is exclusive, as in `get_blocks`.
+    ///
+    /// Each entry is the state root *after* the block at that height, the same root the singular
+    /// `/stateRoot/{height}` route returns. Note that this is not the root a header carries: a
+    /// header holds `previous_state_root`, so the root for height `h` appears in the header of
+    /// height `h + 1`.
+    ///
+    /// A height with no stored root is deliberately a 404 here, whereas the singular route serves
+    /// `null` for it. Returning `null` inside an array would make a gap indistinguishable from a
+    /// root that is genuinely absent, so this matches the other range routes and fails the whole
+    /// request instead.
     pub(crate) async fn get_block_state_roots(
         State(rest): State<Self>,
         Query(block_range): Query<BlockRange>,
     ) -> Result<ErasedJson, RestError> {
-        let (start_height, end_height) = check_block_range(block_range, MAX_STATE_ROOT_RANGE)?;
+        let (start_height, end_height) = check_block_range(block_range, MAX_STATE_ROOT_RANGE, "state roots")?;
 
         // Prepare a closure for the blocking work. The state root map is keyed by height directly,
         // so each height is a single point lookup. See `get_block_hashes` for why this is
@@ -1690,44 +1707,49 @@ mod range_tests {
 
     #[test]
     fn accepts_a_range_within_the_maximum() {
-        assert_eq!(check_block_range(range(10, 20), MAX).unwrap(), (10, 20));
+        assert_eq!(check_block_range(range(10, 20), MAX, "blocks").unwrap(), (10, 20));
     }
 
     #[test]
     fn accepts_a_range_of_exactly_the_maximum() {
-        assert_eq!(check_block_range(range(10, 10 + MAX), MAX).unwrap(), (10, 10 + MAX));
+        assert_eq!(check_block_range(range(10, 10 + MAX), MAX, "blocks").unwrap(), (10, 10 + MAX));
     }
 
     #[test]
     fn accepts_an_empty_range() {
-        assert_eq!(check_block_range(range(10, 10), MAX).unwrap(), (10, 10));
+        assert_eq!(check_block_range(range(10, 10), MAX, "blocks").unwrap(), (10, 10));
     }
 
     #[test]
     fn rejects_an_inverted_range() {
         // This must be rejected before the width check, which would otherwise underflow.
-        let err = check_block_range(range(20, 10), MAX).unwrap_err();
+        let err = check_block_range(range(20, 10), MAX, "blocks").unwrap_err();
         assert_eq!(err, StatusCode::BAD_REQUEST);
     }
 
     #[test]
     fn rejects_a_range_over_the_maximum() {
-        let err = check_block_range(range(10, 11 + MAX), MAX).unwrap_err();
+        let err = check_block_range(range(10, 11 + MAX), MAX, "blocks").unwrap_err();
         assert_eq!(err, StatusCode::BAD_REQUEST);
     }
 
     #[test]
     fn rejects_a_range_spanning_the_whole_height_space() {
-        let err = check_block_range(range(0, u32::MAX), MAX).unwrap_err();
+        let err = check_block_range(range(0, u32::MAX), MAX, "blocks").unwrap_err();
         assert_eq!(err, StatusCode::BAD_REQUEST);
     }
 
-    /// The json size of one item of each kind, measured on mainnet block 21,815,000. A header is
-    /// rounded up to 1 KiB to cover both pretty-printing and the blocks whose `solutions_root` is
-    /// populated, which the measured block's was not.
-    const BLOCK_HASH_BYTES: u32 = 63;
-    const STATE_ROOT_BYTES: u32 = 63;
-    const BLOCK_HEADER_BYTES: u32 = 1_024;
+    /// The json size of one *array element* of each kind, measured on mainnet block 21,815,000 as
+    /// the routes serve it: pretty-printed, so each element carries its own indent, comma and
+    /// newline. These are deliberately not the sizes of the bare values (a block hash is 63 bytes
+    /// as a quoted string but 67 as an element), because it is the response that has to fit.
+    ///
+    /// The header figure is the worst case rather than the measured one: the sampled block had an
+    /// empty `solutions_root` of `"0field"`, and a populated root brings the element from 965 to
+    /// 1,040 bytes.
+    const BLOCK_HASH_BYTES: u32 = 67;
+    const STATE_ROOT_BYTES: u32 = 67;
+    const BLOCK_HEADER_BYTES: u32 = 1_040;
     const BLOCK_BYTES: u32 = 337_511;
 
     #[test]
@@ -1748,6 +1770,12 @@ mod range_tests {
                 "the {name} maximum can serve {largest_response} bytes, more than the {BLOCK_BYTES} bytes of one block"
             );
             assert!(largest_response < largest_get_blocks_response);
+
+            // The headroom above is thin by design, so confirm the guard is load-bearing: the
+            // next maximum that would round up to another whole block must fail it.
+            let too_wide = BLOCK_BYTES / item_bytes + 1;
+            assert!(too_wide * item_bytes > BLOCK_BYTES, "the {name} guard would not catch a raised maximum");
+            assert!(max <= BLOCK_BYTES / item_bytes, "the {name} maximum is already over the limit");
         }
     }
 
