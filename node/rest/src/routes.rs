@@ -347,6 +347,11 @@ impl<N: Network, C: ConsensusStorage<N>, R: Routing<N>> Rest<N, C, R> {
     ///
     /// `start` is inclusive and `end` is exclusive, as in `get_blocks`, so `start == end` returns
     /// an empty array rather than the hash at that height.
+    ///
+    /// A height the node does not have is a 404, and the whole request fails rather than returning
+    /// a short array. Note that this is only visible on `/v2`: on the default and `/v1` prefixes
+    /// the v1 error middleware replaces the status with a 500, so a caller that needs to tell a
+    /// not-yet-synced height apart from a fault has to use `/v2`.
     pub(crate) async fn get_block_hashes(
         State(rest): State<Self>,
         Query(block_range): Query<BlockRange>,
@@ -382,6 +387,11 @@ impl<N: Network, C: ConsensusStorage<N>, R: Routing<N>> Rest<N, C, R> {
     /// GET /<network>/blocks/headers?start={start_height}&end={end_height}
     ///
     /// `start` is inclusive and `end` is exclusive, as in `get_blocks`.
+    ///
+    /// A height the node does not have is a 404, and the whole request fails rather than returning
+    /// a short array. Note that this is only visible on `/v2`: on the default and `/v1` prefixes
+    /// the v1 error middleware replaces the status with a 500, so a caller that needs to tell a
+    /// not-yet-synced height apart from a fault has to use `/v2`.
     pub(crate) async fn get_block_headers(
         State(rest): State<Self>,
         Query(block_range): Query<BlockRange>,
@@ -423,7 +433,8 @@ impl<N: Network, C: ConsensusStorage<N>, R: Routing<N>> Rest<N, C, R> {
     /// A height with no stored root is deliberately a 404 here, whereas the singular route serves
     /// `null` for it. Returning `null` inside an array would make a gap indistinguishable from a
     /// root that is genuinely absent, so this matches the other range routes and fails the whole
-    /// request instead.
+    /// request instead. As above, that 404 is only visible on `/v2`; the default and `/v1`
+    /// prefixes replace it with a 500.
     pub(crate) async fn get_block_state_roots(
         State(rest): State<Self>,
         Query(block_range): Query<BlockRange>,
