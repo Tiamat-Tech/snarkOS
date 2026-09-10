@@ -490,7 +490,7 @@ mod route_tests {
     use snarkos_node_network::ConnectionMode;
     use snarkos_node_router::test_helpers::{TestRouter, client, sample_genesis_block};
     use snarkvm::{
-        ledger::{committee::test_helpers::sample_committee, store::helpers::memory::ConsensusMemory},
+        ledger::{block::Header, committee::test_helpers::sample_committee, store::helpers::memory::ConsensusMemory},
         prelude::MainnetV0,
         utilities::TestRng,
     };
@@ -571,5 +571,98 @@ mod route_tests {
 
         let hashes: Vec<<CurrentNetwork as Network>::BlockHash> = serde_json::from_str(&body).unwrap();
         assert_eq!(hashes, vec![sample_genesis_block::<CurrentNetwork>().hash()]);
+    }
+
+    #[tokio::test]
+    async fn block_headers_returns_the_headers_in_the_range() {
+        let rest = sample_rest().await;
+
+        let (status, body) = get(&rest, "/blocks/headers?start=0&end=1").await;
+        assert_eq!(status, StatusCode::OK);
+
+        let headers: Vec<Header<CurrentNetwork>> = serde_json::from_str(&body).unwrap();
+        assert_eq!(headers, vec![*sample_genesis_block::<CurrentNetwork>().header()]);
+    }
+
+    #[tokio::test]
+    async fn block_state_roots_returns_the_state_roots_in_the_range() {
+        let rest = sample_rest().await;
+
+        let (status, body) = get(&rest, "/blocks/stateRoots?start=0&end=1").await;
+        assert_eq!(status, StatusCode::OK);
+
+        // The state root at a height is the root *after* that block, so it is not the genesis
+        // header's `previous_state_root`. Compare against what the ledger reports for the height.
+        let state_roots: Vec<<CurrentNetwork as Network>::StateRoot> = serde_json::from_str(&body).unwrap();
+        assert_eq!(state_roots, vec![rest.ledger.get_state_root(0).unwrap().unwrap()]);
+    }
+
+    #[tokio::test]
+    async fn an_empty_range_returns_an_empty_array() {
+        let rest = sample_rest().await;
+
+        for route in ["hashes", "headers", "stateRoots"] {
+            let (status, body) = get(&rest, &format!("/blocks/{route}?start=0&end=0")).await;
+            assert_eq!(status, StatusCode::OK, "{route} rejected an empty range");
+            assert_eq!(serde_json::from_str::<Vec<serde_json::Value>>(&body).unwrap(), Vec::<serde_json::Value>::new());
+        }
+    }
+
+    #[tokio::test]
+    async fn a_range_past_the_tip_is_not_found() {
+        let rest = sample_rest().await;
+
+        // The test ledger holds only the genesis block, so height 1 does not exist. The whole
+        // request fails rather than returning a short array, matching `/blocks`.
+        for route in ["hashes", "headers", "stateRoots"] {
+            let (status, _) = get(&rest, &format!("/blocks/{route}?start=0&end=2")).await;
+            assert_eq!(status, StatusCode::NOT_FOUND, "{route} did not report a missing height");
+        }
+    }
+
+    #[tokio::test]
+    async fn an_inverted_range_is_rejected() {
+        let rest = sample_rest().await;
+
+        for route in ["hashes", "headers", "stateRoots"] {
+            let (status, _) = get(&rest, &format!("/blocks/{route}?start=10&end=0")).await;
+            assert_eq!(status, StatusCode::BAD_REQUEST, "{route} accepted an inverted range");
+        }
+    }
+
+    #[tokio::test]
+    async fn a_range_over_the_maximum_is_rejected() {
+        let rest = sample_rest().await;
+
+        // One past each route's maximum. These are rejected before any lookup, so the fact that
+        // the test ledger has a single block does not matter.
+        for (route, over_max) in [("hashes", 5_001), ("headers", 321), ("stateRoots", 5_001)] {
+            let (status, body) = get(&rest, &format!("/blocks/{route}?start=0&end={over_max}")).await;
+            assert_eq!(status, StatusCode::BAD_REQUEST, "{route} accepted a range over its maximum");
+            assert!(body.contains("Cannot request more than"), "{route} gave an unexpected error: {body}");
+        }
+    }
+
+    #[tokio::test]
+    async fn a_range_at_the_maximum_is_accepted() {
+        let rest = sample_rest().await;
+
+        // Exactly each route's maximum passes the range check. The lookups then fail on the test
+        // ledger's single block, so a 404 here still proves the maximum itself was not the reason.
+        for (route, max) in [("hashes", 5_000), ("headers", 320), ("stateRoots", 5_000)] {
+            let (status, body) = get(&rest, &format!("/blocks/{route}?start=0&end={max}")).await;
+            assert_eq!(status, StatusCode::NOT_FOUND, "{route} rejected a range at its maximum");
+            assert!(!body.contains("Cannot request more than"), "{route} rejected its own maximum: {body}");
+        }
+    }
+
+    #[tokio::test]
+    async fn missing_or_invalid_range_parameters_are_rejected() {
+        let rest = sample_rest().await;
+
+        for query in ["", "?start=0", "?end=1", "?start=abc&end=1", "?start=0&end=-1"] {
+            let (status, _) = get(&rest, &format!("/blocks/hashes{query}")).await;
+            assert_eq!(status, StatusCode::BAD_REQUEST, "the query '{query}' was not rejected");
+        }
     }
 }
