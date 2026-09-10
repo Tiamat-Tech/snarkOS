@@ -482,3 +482,94 @@ mod tests {
         assert_eq!(res.status(), StatusCode::SERVICE_UNAVAILABLE);
     }
 }
+
+#[cfg(test)]
+mod route_tests {
+    use super::*;
+    use snarkos_node_bft_ledger_service::MockLedgerService;
+    use snarkos_node_network::ConnectionMode;
+    use snarkos_node_router::test_helpers::{TestRouter, client, sample_genesis_block};
+    use snarkvm::{
+        ledger::{committee::test_helpers::sample_committee, store::helpers::memory::ConsensusMemory},
+        prelude::MainnetV0,
+        utilities::TestRng,
+    };
+
+    use aleo_std::StorageMode;
+    use axum::body::to_bytes;
+    use tower::ServiceExt; // for `oneshot`
+
+    type CurrentNetwork = MainnetV0;
+    type CurrentRest = Rest<CurrentNetwork, ConsensusMemory<CurrentNetwork>, TestRouter<CurrentNetwork>>;
+
+    /// The rate limit given to the router under test. The governor layer is applied by
+    /// `build_routes`, so this is set high enough that a test making several requests in quick
+    /// succession is never the thing that trips it.
+    const TEST_RPS: u32 = 1_000;
+
+    /// Builds a `Rest` over an in-memory ledger containing only the genesis block.
+    ///
+    /// This constructs the struct directly rather than calling `Rest::start`, which would bind a
+    /// port and spawn a server. None of the routes exercised here touch `consensus`, `cdn_sync`,
+    /// `routing` or `block_sync`; those fields exist only to satisfy the type.
+    async fn sample_rest() -> CurrentRest {
+        let rng = &mut TestRng::default();
+
+        // `Ledger::load` reaches snarkVM's sequential-operation thread and blocks on the reply,
+        // which panics if called from an async context. Production always drives these from a
+        // blocking task, so do the same here.
+        let ledger = tokio::task::spawn_blocking(|| {
+            Ledger::<CurrentNetwork, ConsensusMemory<CurrentNetwork>>::load(
+                sample_genesis_block::<CurrentNetwork>(),
+                StorageMode::new_test(None),
+            )
+        })
+        .await
+        .expect("the ledger task panicked")
+        .expect("couldn't load the test ledger");
+
+        let ledger_service = Arc::new(MockLedgerService::new(sample_committee(rng)));
+
+        Rest {
+            cdn_sync: None,
+            consensus: None,
+            ledger,
+            routing: Arc::new(client(0, 10, rng).await),
+            handles: Default::default(),
+            block_sync: Arc::new(BlockSync::new(ledger_service, ConnectionMode::Router)),
+            num_verifying_deploys: Arc::new(Semaphore::new(1)),
+            num_verifying_executions: Arc::new(Semaphore::new(1)),
+            num_verifying_solutions: Arc::new(Semaphore::new(1)),
+            block_cache: Arc::new(Mutex::new(LruCache::new(NonZeroUsize::new(BLOCK_CACHE_SIZE).unwrap()))),
+        }
+    }
+
+    /// Issues a GET request against the routes, without the network prefix that `spawn_server`
+    /// nests them under.
+    ///
+    /// The governor layer keys on the peer IP taken from `ConnectInfo`, which a request built by
+    /// hand does not carry, so this attaches one; without it every request fails the rate limiter's
+    /// key extractor rather than reaching a handler.
+    async fn get(rest: &CurrentRest, uri: &str) -> (StatusCode, String) {
+        let mut request = Request::builder().uri(uri).body(Body::empty()).unwrap();
+        request.extensions_mut().insert(ConnectInfo(SocketAddr::from(([127, 0, 0, 1], 4130))));
+
+        let response = rest.build_routes(TEST_RPS).oneshot(request).await.unwrap();
+        let status = response.status();
+        let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+
+        (status, String::from_utf8(body.to_vec()).unwrap())
+    }
+
+    #[tokio::test]
+    async fn block_hashes_returns_the_hashes_in_the_range() {
+        let rest = sample_rest().await;
+
+        // The test ledger holds only the genesis block, so this is the one height available.
+        let (status, body) = get(&rest, "/blocks/hashes?start=0&end=1").await;
+        assert_eq!(status, StatusCode::OK);
+
+        let hashes: Vec<<CurrentNetwork as Network>::BlockHash> = serde_json::from_str(&body).unwrap();
+        assert_eq!(hashes, vec![sample_genesis_block::<CurrentNetwork>().hash()]);
+    }
+}
