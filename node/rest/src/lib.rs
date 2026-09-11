@@ -256,6 +256,9 @@ impl<N: Network, C: ConsensusStorage<N>, R: Routing<N>> Rest<N, C, R> {
             // GET misc endpoints.
             .route("/version", get(Self::get_version))
             .route("/blocks", get(Self::get_blocks))
+            .route("/blocks/hashes", get(Self::get_block_hashes))
+            .route("/blocks/headers", get(Self::get_block_headers))
+            .route("/blocks/stateRoots", get(Self::get_block_state_roots))
             .route("/height/{hash}", get(Self::get_height))
             .route("/memoryPool/transmissions", get(Self::get_memory_pool_transmissions))
             .route("/memoryPool/solutions", get(Self::get_memory_pool_solutions))
