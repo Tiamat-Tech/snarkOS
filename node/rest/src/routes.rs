@@ -144,6 +144,16 @@ const MAX_BLOCK_HEADER_RANGE: u32 = 320;
 /// The maximum number of state roots that `get_block_state_roots` serves in one request.
 const MAX_STATE_ROOT_RANGE: u32 = 5_000;
 
+/// The maximum number of blocks whose transactions `get_block_transactions_range` serves in one
+/// request.
+///
+/// Unlike a hash, a state root or a header, a block's transactions have no fixed size, so this
+/// cannot be sized to fit a response inside one block the way the others are. It matches
+/// `MAX_BLOCK_RANGE` instead: for any given range this route returns a strict subset of what
+/// `get_blocks` already returns, so it introduces no response the node could not already be asked
+/// for, and is considerably cheaper than the `get_blocks` call it replaces.
+const MAX_BLOCK_TRANSACTIONS_RANGE: u32 = MAX_BLOCK_RANGE;
+
 /// Validates a block range against the given maximum, and returns `(start, end)`.
 ///
 /// Each route serving a range picks its own maximum, sized so that the largest response it can
@@ -421,6 +431,53 @@ impl<N: Network, C: ConsensusStorage<N>, R: Routing<N>> Rest<N, C, R> {
 
                 Err(RestError::internal_server_error(
                     err.context(format!("Failed to get block headers '{start_height}..{end_height}'")),
+                ))
+            }
+        }
+    }
+
+    /// GET /<network>/blocks/transactions?start={start_height}&end={end_height}
+    ///
+    /// `start` is inclusive and `end` is exclusive, as in `get_blocks`. Each element is the
+    /// confirmed transactions of one block, in block order, so a block that confirmed none is an
+    /// empty array rather than an omission.
+    ///
+    /// This is the range form of `/block/{height}/transactions`. It carries the part of a block a
+    /// consumer reconstructing transaction trees needs -- the confirmed transaction ids and their
+    /// contents, including the program a deployment carries -- without `authority`, which is over
+    /// 99% of a block's bytes and which no transaction tree touches.
+    ///
+    /// A height the node does not have is a 404, and the whole request fails rather than returning
+    /// a short array. Note that this is only visible on `/v2`: on the default and `/v1` prefixes
+    /// the v1 error middleware replaces the status with a 500, so a caller that needs to tell a
+    /// not-yet-synced height apart from a fault has to use `/v2`.
+    pub(crate) async fn get_block_transactions_range(
+        State(rest): State<Self>,
+        Query(block_range): Query<BlockRange>,
+    ) -> Result<ErasedJson, RestError> {
+        let (start_height, end_height) =
+            check_block_range(block_range, MAX_BLOCK_TRANSACTIONS_RANGE, "blocks' transactions")?;
+
+        // Prepare a closure for the blocking work. Each height is two point lookups, the block ID
+        // map then the transactions map, and deserializing the transactions themselves. That last
+        // part is unbounded per block, unlike the other range routes, so this keeps `get_blocks`'
+        // maximum and its rayon fan-out rather than the sequential loop the cheaper routes use.
+        let get_json_transactions = move || -> Result<ErasedJson, RestError> {
+            let transactions = cfg_into_iter!(start_height..end_height)
+                .map(|height| rest.ledger.get_transactions(height).map_err(map_missing_resource_error))
+                .collect::<Result<Vec<_>, _>>()?;
+
+            Ok(ErasedJson::pretty(transactions))
+        };
+
+        // Fetch the transactions from the ledger and serialize to json.
+        match tokio::task::spawn_blocking(get_json_transactions).await {
+            Ok(json) => json,
+            Err(err) => {
+                let err: anyhow::Error = err.into();
+
+                Err(RestError::internal_server_error(
+                    err.context(format!("Failed to get transactions for blocks '{start_height}..{end_height}'")),
                 ))
             }
         }
@@ -1797,6 +1854,18 @@ mod range_tests {
             assert!(too_wide * item_bytes > BLOCK_BYTES, "the {name} guard would not catch a raised maximum");
             assert!(max <= BLOCK_BYTES / item_bytes, "the {name} maximum is already over the limit");
         }
+    }
+
+    #[test]
+    fn the_transactions_maximum_matches_get_blocks() {
+        // `each_maximum_bounds_its_response_to_at_most_one_block` deliberately does not cover this
+        // route: a block's transactions have no fixed size, so no per-item figure bounds it. The
+        // property that holds instead is that for any range it returns a subset of what
+        // `get_blocks` returns for the same range, which is only true while the maximums agree.
+        assert_eq!(
+            MAX_BLOCK_TRANSACTIONS_RANGE, MAX_BLOCK_RANGE,
+            "the transactions route can now be asked for a range `get_blocks` would refuse"
+        );
     }
 
     #[test]
