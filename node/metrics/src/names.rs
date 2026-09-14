@@ -107,7 +107,7 @@ pub mod consensus {
     pub const CERTIFICATE_COMMIT_LATENCY: &str = "snarkos_consensus_certificate_commit_latency_secs";
     pub const COMMITTED_CERTIFICATES: &str = "snarkos_consensus_committed_certificates_total";
     pub const BLOCK_LATENCY: &str = "snarkos_consensus_block_latency_secs";
-    pub const BLOCK_LAG: &str = "snarkos_consensus_block_lag_ms";
+    pub const BLOCK_LAG: &str = "snarkos_consensus_block_lag_secs";
     /// Time spent in prepare_advance_to_next_quorum_block (block construction).
     pub const PREPARE_ADVANCE_SECS: &str = "snarkos_consensus_prepare_advance_secs";
     /// Time spent in check_next_block.
