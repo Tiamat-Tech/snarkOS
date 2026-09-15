@@ -259,6 +259,7 @@ impl<N: Network, C: ConsensusStorage<N>, R: Routing<N>> Rest<N, C, R> {
             .route("/blocks/hashes", get(Self::get_block_hashes))
             .route("/blocks/headers", get(Self::get_block_headers))
             .route("/blocks/stateRoots", get(Self::get_block_state_roots))
+            .route("/blocks/transactions", get(Self::get_block_transactions_range))
             .route("/height/{hash}", get(Self::get_height))
             .route("/memoryPool/transmissions", get(Self::get_memory_pool_transmissions))
             .route("/memoryPool/solutions", get(Self::get_memory_pool_solutions))
@@ -514,7 +515,11 @@ mod route_tests {
     use snarkos_node_network::ConnectionMode;
     use snarkos_node_router::test_helpers::{TestRouter, client, sample_genesis_block};
     use snarkvm::{
-        ledger::{block::Header, committee::test_helpers::sample_committee, store::helpers::memory::ConsensusMemory},
+        ledger::{
+            block::{Header, Transactions},
+            committee::test_helpers::sample_committee,
+            store::helpers::memory::ConsensusMemory,
+        },
         prelude::MainnetV0,
         utilities::TestRng,
     };
@@ -622,10 +627,49 @@ mod route_tests {
     }
 
     #[tokio::test]
+    async fn block_transactions_returns_the_transactions_in_the_range() {
+        let rest = sample_rest().await;
+
+        let (status, body) = get(&rest, "/blocks/transactions?start=0&end=1").await;
+        assert_eq!(status, StatusCode::OK);
+
+        // One element per block asked for, each the confirmed transactions of that block. Genesis
+        // confirms the bootstrap deployments, so this is a real payload rather than an empty one.
+        let per_block: Vec<Transactions<CurrentNetwork>> = serde_json::from_str(&body).unwrap();
+        assert_eq!(per_block.len(), 1);
+        assert_eq!(per_block[0], *sample_genesis_block::<CurrentNetwork>().transactions());
+        assert!(!per_block[0].is_empty(), "genesis should confirm transactions");
+    }
+
+    #[tokio::test]
+    async fn block_transactions_omits_the_authority() {
+        let rest = sample_rest().await;
+
+        // The reason this route exists. `authority` is the AleoBFT subdag and its signatures, over
+        // 99% of a mainnet block's bytes, and no transaction tree touches it. A consumer that
+        // needs transaction contents should not have to download it to throw it away.
+        let (status, projection) = get(&rest, "/blocks/transactions?start=0&end=1").await;
+        assert_eq!(status, StatusCode::OK);
+        assert!(!projection.contains("authority"), "the projection carries the authority");
+
+        let (status, whole) = get(&rest, "/blocks?start=0&end=1").await;
+        assert_eq!(status, StatusCode::OK);
+        assert!(whole.contains("authority"), "a whole block should carry the authority");
+
+        // The same confirmed transactions are in both, so the projection cannot be larger.
+        assert!(
+            projection.len() < whole.len(),
+            "the projection ({}) is not smaller than the whole block ({})",
+            projection.len(),
+            whole.len()
+        );
+    }
+
+    #[tokio::test]
     async fn an_empty_range_returns_an_empty_array() {
         let rest = sample_rest().await;
 
-        for route in ["hashes", "headers", "stateRoots"] {
+        for route in ["hashes", "headers", "stateRoots", "transactions"] {
             let (status, body) = get(&rest, &format!("/blocks/{route}?start=0&end=0")).await;
             assert_eq!(status, StatusCode::OK, "{route} rejected an empty range");
             assert_eq!(serde_json::from_str::<Vec<serde_json::Value>>(&body).unwrap(), Vec::<serde_json::Value>::new());
@@ -638,7 +682,7 @@ mod route_tests {
 
         // The test ledger holds only the genesis block, so height 1 does not exist. The whole
         // request fails rather than returning a short array, matching `/blocks`.
-        for route in ["hashes", "headers", "stateRoots"] {
+        for route in ["hashes", "headers", "stateRoots", "transactions"] {
             let (status, _) = get(&rest, &format!("/blocks/{route}?start=0&end=2")).await;
             assert_eq!(status, StatusCode::NOT_FOUND, "{route} did not report a missing height");
         }
@@ -648,7 +692,7 @@ mod route_tests {
     async fn an_inverted_range_is_rejected() {
         let rest = sample_rest().await;
 
-        for route in ["hashes", "headers", "stateRoots"] {
+        for route in ["hashes", "headers", "stateRoots", "transactions"] {
             let (status, _) = get(&rest, &format!("/blocks/{route}?start=10&end=0")).await;
             assert_eq!(status, StatusCode::BAD_REQUEST, "{route} accepted an inverted range");
         }
@@ -660,7 +704,7 @@ mod route_tests {
 
         // One past each route's maximum. These are rejected before any lookup, so the fact that
         // the test ledger has a single block does not matter.
-        for (route, over_max) in [("hashes", 5_001), ("headers", 321), ("stateRoots", 5_001)] {
+        for (route, over_max) in [("hashes", 5_001), ("headers", 321), ("stateRoots", 5_001), ("transactions", 51)] {
             let (status, body) = get(&rest, &format!("/blocks/{route}?start=0&end={over_max}")).await;
             assert_eq!(status, StatusCode::BAD_REQUEST, "{route} accepted a range over its maximum");
             assert!(body.contains("Cannot request more than"), "{route} gave an unexpected error: {body}");
@@ -673,7 +717,7 @@ mod route_tests {
 
         // Exactly each route's maximum passes the range check. The lookups then fail on the test
         // ledger's single block, so a 404 here still proves the maximum itself was not the reason.
-        for (route, max) in [("hashes", 5_000), ("headers", 320), ("stateRoots", 5_000)] {
+        for (route, max) in [("hashes", 5_000), ("headers", 320), ("stateRoots", 5_000), ("transactions", 50)] {
             let (status, body) = get(&rest, &format!("/blocks/{route}?start=0&end={max}")).await;
             assert_eq!(status, StatusCode::NOT_FOUND, "{route} rejected a range at its maximum");
             assert!(!body.contains("Cannot request more than"), "{route} rejected its own maximum: {body}");
