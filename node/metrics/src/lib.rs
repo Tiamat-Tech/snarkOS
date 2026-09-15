@@ -56,7 +56,27 @@ pub fn initialize_metrics(ip: Option<SocketAddr>) {
     // Note: this is `PrometheusBuilder::install` spelled out, so that the handle to the exporter
     // task can be retained. `install` spawns the task and immediately drops its handle, which
     // leaves the exporter running after the node has shut down; see `shut_down_metrics`.
-    let builder = metrics_exporter_prometheus::PrometheusBuilder::new();
+    // Seconds-scale latency buckets, shared by all `*_secs` histograms (including `BLOCK_LAG`) plus
+    // `TRANSMISSION_LATENCY`.
+    // Unitless count buckets, for the `snarkos_bft_subdag_*` histograms.
+    //
+    // Note: these are first-pass boundaries, not yet tuned against production data.
+    const SECS_BUCKETS: &[f64] = &[0.05, 0.1, 0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0, 3.0, 5.0, 10.0];
+    const COUNT_BUCKETS: &[f64] = &[1.0, 2.0, 3.0, 5.0, 8.0, 13.0, 21.0, 34.0, 55.0, 89.0];
+
+    let builder = metrics_exporter_prometheus::PrometheusBuilder::new()
+        .set_buckets_for_metric(metrics_exporter_prometheus::Matcher::Suffix("_secs".to_string()), SECS_BUCKETS)
+        .expect("can't set the seconds-scale histogram buckets")
+        .set_buckets_for_metric(
+            metrics_exporter_prometheus::Matcher::Full(consensus::TRANSMISSION_LATENCY.to_string()),
+            SECS_BUCKETS,
+        )
+        .expect("can't set the transmission latency histogram buckets")
+        .set_buckets_for_metric(
+            metrics_exporter_prometheus::Matcher::Prefix("snarkos_bft_subdag_".to_string()),
+            COUNT_BUCKETS,
+        )
+        .expect("can't set the subdag count histogram buckets");
     let (recorder, exporter) = if let Some(ip) = ip { builder.with_http_listener(ip) } else { builder }
         .build()
         .expect("can't build the prometheus exporter");

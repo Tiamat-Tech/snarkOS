@@ -694,11 +694,13 @@ impl<N: Network> Consensus<N> {
         #[cfg(feature = "metrics")]
         {
             let now_utc = snarkos_node_bft::helpers::now_utc();
-            let elapsed = std::time::Duration::from_secs((now_utc.unix_timestamp() - start) as u64);
+            let elapsed_secs = (now_utc.unix_timestamp() - start) as f64;
             let next_block_timestamp = block.header().metadata().timestamp();
             let next_block_utc = snarkos_node_bft::helpers::to_utc_datetime(next_block_timestamp);
+            // Both endpoints are on-chain block timestamps (`i64` seconds by protocol design), so this
+            // value can only ever be a whole number of seconds without a snarkVM protocol change.
             let block_latency = next_block_timestamp - current_block_timestamp;
-            let block_lag = (now_utc - next_block_utc).whole_milliseconds();
+            let block_lag = (now_utc - next_block_utc).whole_seconds() as f64;
 
             let proof_target = block.header().proof_target();
             let coinbase_target = block.header().coinbase_target();
@@ -708,9 +710,9 @@ impl<N: Network> Consensus<N> {
             metrics::add_transmission_latency_metric(&self.transmissions_tracker, &block);
 
             metrics::gauge(metrics::consensus::COMMITTED_CERTIFICATES, num_committed_certificates as f64);
-            metrics::histogram(metrics::consensus::CERTIFICATE_COMMIT_LATENCY, elapsed.as_secs_f64());
+            metrics::histogram(metrics::consensus::CERTIFICATE_COMMIT_LATENCY, elapsed_secs);
             metrics::histogram(metrics::consensus::BLOCK_LATENCY, block_latency as f64);
-            metrics::histogram(metrics::consensus::BLOCK_LAG, block_lag as f64);
+            metrics::histogram(metrics::consensus::BLOCK_LAG, block_lag);
             metrics::gauge(metrics::blocks::PROOF_TARGET, proof_target as f64);
             metrics::gauge(metrics::blocks::COINBASE_TARGET, coinbase_target as f64);
             metrics::gauge(metrics::blocks::CUMULATIVE_PROOF_TARGET, cumulative_proof_target as f64);

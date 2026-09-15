@@ -58,9 +58,9 @@ pub(super) const HISTOGRAM_NAMES: [&str; 13] = [
     consensus::CERTIFICATE_COMMIT_LATENCY,
     consensus::BLOCK_LATENCY,
     consensus::BLOCK_LAG,
-    consensus::PREPARE_ADVANCE_TO_NEXT_QUORUM_BLOCK_LATENCY,
-    consensus::CHECK_NEXT_BLOCK_LATENCY,
-    consensus::ADVANCE_TO_NEXT_BLOCK_LATENCY,
+    consensus::PREPARE_ADVANCE_SECS,
+    consensus::CHECK_NEXT_BLOCK_SECS,
+    consensus::ADVANCE_TO_NEXT_BLOCK_SECS,
 ];
 
 pub mod bft {
@@ -104,14 +104,10 @@ pub mod blocks {
 }
 
 pub mod consensus {
-    pub const ADVANCE_TO_NEXT_BLOCK_LATENCY: &str = "snarkos_consensus_advance_to_next_block_latency_secs";
-    pub const CHECK_NEXT_BLOCK_LATENCY: &str = "snarkos_consensus_check_next_block_latency_secs";
-    pub const PREPARE_ADVANCE_TO_NEXT_QUORUM_BLOCK_LATENCY: &str =
-        "snarkos_consensus_prepare_advance_to_next_quorum_block_latency_secs";
     pub const CERTIFICATE_COMMIT_LATENCY: &str = "snarkos_consensus_certificate_commit_latency_secs";
     pub const COMMITTED_CERTIFICATES: &str = "snarkos_consensus_committed_certificates_total";
     pub const BLOCK_LATENCY: &str = "snarkos_consensus_block_latency_secs";
-    pub const BLOCK_LAG: &str = "snarkos_consensus_block_lag_ms";
+    pub const BLOCK_LAG: &str = "snarkos_consensus_block_lag_secs";
     /// Time spent in prepare_advance_to_next_quorum_block (block construction).
     pub const PREPARE_ADVANCE_SECS: &str = "snarkos_consensus_prepare_advance_secs";
     /// Time spent in check_next_block.
