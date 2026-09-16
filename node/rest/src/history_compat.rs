@@ -115,7 +115,9 @@
 //! - `GET /program/credits.aleo/mapping/{name}/{key}/history/{height}` and the `?keys=` batch form,
 //!   for the five mappings above. The response body is the value string from the snapshot, or
 //!   `null` if the key is absent -- the same body the removed feature produced. Any other program
-//!   or mapping is a 404 saying what is supported.
+//!   or mapping is a 404 saying what is supported, and so is a height the upstream has no
+//!   snapshot of. This node's own height and sync state play no part; the upstream is the source
+//!   of truth.
 //! - `GET /staking/rewards/{address}/{height}`: `[validator, reward, new_stake]`, as the removed
 //!   feature produced it, joined from `stakingrewards` and `bonded` at that height.
 //! - `POST /program/{id}/view/{function}/{height}`: a 404 explaining that it cannot be served.

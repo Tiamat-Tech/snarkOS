@@ -649,18 +649,29 @@ mod route_tests {
         }
 
         #[tokio::test]
-        async fn history_answers_null_for_an_absent_key_and_for_a_future_height() {
+        async fn history_answers_null_for_an_absent_key() {
             let rest = sample_compat_rest().await;
             // A key absent from the snapshot: e.g. an unbond that was claimed.
             let (status, body) =
                 get(&rest, &format!("/program/credits.aleo/mapping/unbonding/{BONDED_STAKER}/history/0")).await;
             assert_eq!(status, StatusCode::OK, "{body}");
             assert_eq!(body.trim(), "null");
-            // A height above the node's, answered without consulting the upstream.
+        }
+
+        #[tokio::test]
+        async fn history_is_served_regardless_of_the_node_height() {
+            // The test ledger is at height 0; the upstream is the source of truth, so a height far
+            // above the node's is answered from it all the same.
+            let rest = sample_compat_rest().await;
             let (status, body) =
-                get(&rest, &format!("/program/credits.aleo/mapping/unbonding/{UNBONDING_STAKER}/history/5")).await;
+                get(&rest, &format!("/program/credits.aleo/mapping/unbonding/{UNBONDING_STAKER}/history/1000000"))
+                    .await;
             assert_eq!(status, StatusCode::OK, "{body}");
-            assert_eq!(body.trim(), "null");
+            let value: Option<String> = serde_json::from_str(&body).unwrap();
+            assert!(value.is_some());
+            let (status, body) = get(&rest, &format!("/staking/rewards/{BONDED_STAKER}/1000000")).await;
+            assert_eq!(status, StatusCode::OK, "{body}");
+            assert_ne!(body.trim(), "null");
         }
 
         #[tokio::test]
@@ -714,10 +725,6 @@ mod route_tests {
             assert_eq!(reward, (VALIDATOR.to_string(), 6477, 141_347_021_440));
             // A staker with no reward at that height.
             let (status, body) = get(&rest, &format!("/staking/rewards/{UNBONDING_STAKER}/0")).await;
-            assert_eq!(status, StatusCode::OK, "{body}");
-            assert_eq!(body.trim(), "null");
-            // A future height.
-            let (status, body) = get(&rest, &format!("/staking/rewards/{BONDED_STAKER}/5")).await;
             assert_eq!(status, StatusCode::OK, "{body}");
             assert_eq!(body.trim(), "null");
         }

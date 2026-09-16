@@ -1274,42 +1274,11 @@ impl<N: Network, C: ConsensusStorage<N>, R: Routing<N>> Rest<N, C, R> {
         self.history_compat.as_deref().expect("the history routes are registered only in compatibility mode")
     }
 
-    /// Decides whether a `/history/{height}` request can be answered, and whether the upstream
-    /// needs to be consulted for it:
-    ///
-    /// - `Err(503)` while this node is still syncing. Its own height is then meaningless as a
-    ///   bound, and answering `null` for a height it has not reached would read as "the key was
-    ///   absent" -- the wrong answer for, say, an unbond that the upstream knows is pending.
-    /// - `Ok(false)` for a height above this node's: the block may not exist yet, so it is
-    ///   answered with `null` without asking the upstream, as the removed feature did.
-    /// - `Ok(true)` otherwise: the upstream has (or should have) a snapshot.
-    fn history_compat_height_available(&self, height: u32) -> Result<bool, RestError> {
-        if !self.routing.is_within_sync_leniency() {
-            return Err(RestError::service_unavailable(anyhow!(
-                "Unable to answer for block {height} (node is syncing)"
-            )));
-        }
-        Ok(height <= self.ledger.latest_height())
-    }
-
-    /// Returns the upstream snapshot of a mapping at `height`, or `None` if the height is above
-    /// this node's (see `history_compat_height_available`).
-    async fn history_compat_mapping_at(
-        &self,
-        height: u32,
-        mapping: SnapshotMapping,
-    ) -> Result<Option<Arc<MappingSnapshot>>, RestError> {
-        match self.history_compat_height_available(height)? {
-            true => self.history_compat().mapping(height, mapping).await.map(Some),
-            false => Ok(None),
-        }
-    }
-
     /// GET /{network}/program/{id}/mapping/{name}/{key}/history/{height}
     ///
     /// History compatibility mode. The value is read from the upstream snapshot of the mapping at
     /// `height`. The response is the removed feature's: the value's plaintext string, or `null`
-    /// if the key is absent at that height (or the height is above this node's). For example:
+    /// if the key is absent at that height. For example:
     ///
     /// ```text
     /// GET /mainnet/program/credits.aleo/mapping/unbonding/aleo1qgtv...4ukl2/history/1000000
@@ -1320,14 +1289,23 @@ impl<N: Network, C: ConsensusStorage<N>, R: Routing<N>> Rest<N, C, R> {
     /// -> 200
     /// null
     /// ```
+    ///
+    /// This node's own height plays no part: the upstream is the source of truth, so a node that
+    /// is itself still syncing answers correctly, and a height the upstream has no snapshot of --
+    /// above its tip, which trails the network's by a few blocks, or block 0 -- is a 404 saying
+    /// so. (The removed feature answered `null` for a height above its own. `null` here means
+    /// "the key was not in the mapping at that height", which is not known for such a height, so
+    /// it is not claimed.)
     pub(crate) async fn get_history_compat(
         State(rest): State<Self>,
         Path((program_id, mapping_name, mapping_key, height)): Path<HistoricalMappingKey<N>>,
     ) -> Result<impl axum::response::IntoResponse, RestError> {
         let mapping = history_compat_mapping(&program_id, &mapping_name)?;
-        let snapshot = rest.history_compat_mapping_at(height, mapping).await?;
-        // The key is reprinted so that it matches the upstream's canonical spelling.
-        let value = snapshot.as_ref().and_then(|snapshot| snapshot.get(&mapping_key.to_string()));
+        let snapshot = rest.history_compat().mapping(height, mapping).await?;
+        // The key is reprinted with `to_string` so that it matches the upstream's canonical spelling
+        // (the upstream keys are `Plaintext::to_string` output; a client may have spelled the same
+        // plaintext differently).
+        let value = snapshot.get(&mapping_key.to_string());
         Ok((StatusCode::OK, ErasedJson::pretty(value)))
     }
 
@@ -1352,15 +1330,12 @@ impl<N: Network, C: ConsensusStorage<N>, R: Routing<N>> Rest<N, C, R> {
     ) -> Result<impl axum::response::IntoResponse, RestError> {
         let mapping = history_compat_mapping(&program_id, &mapping_name)?;
         let mapping_keys = parse_historical_mapping_keys::<N>(&historical_keys.keys)?;
-        let snapshot = rest.history_compat_mapping_at(height, mapping).await?;
+        let snapshot = rest.history_compat().mapping(height, mapping).await?;
         let values = historical_keys
             .keys
             .iter()
             .zip(&mapping_keys)
-            .map(|(key, mapping_key)| {
-                let value = snapshot.as_ref().and_then(|snapshot| snapshot.get(&mapping_key.to_string()));
-                json!({ "key": key, "value": value })
-            })
+            .map(|(key, mapping_key)| json!({ "key": key, "value": snapshot.get(&mapping_key.to_string()) }))
             .collect::<Vec<_>>();
         Ok((StatusCode::OK, ErasedJson::pretty(values)))
     }
@@ -1388,7 +1363,8 @@ impl<N: Network, C: ConsensusStorage<N>, R: Routing<N>> Rest<N, C, R> {
     ///
     /// History compatibility mode. The response is the `history-staking-rewards` feature's:
     /// `[validator, reward, new_stake]` for the reward paid to `address` at block `height`, or
-    /// `null` if it received none (it was not bonded, or the height is above this node's):
+    /// `null` if it received none (it was not bonded). As for the mapping routes, this node's own
+    /// height plays no part, and a height the upstream has no snapshot of is a 404:
     ///
     /// ```text
     /// GET /mainnet/staking/rewards/aleo1qy4q...wdf6/1000000
@@ -1409,9 +1385,6 @@ impl<N: Network, C: ConsensusStorage<N>, R: Routing<N>> Rest<N, C, R> {
         State(rest): State<Self>,
         Path((address, height)): Path<(Address<N>, u32)>,
     ) -> Result<impl axum::response::IntoResponse, RestError> {
-        if !rest.history_compat_height_available(height)? {
-            return Ok((StatusCode::OK, ErasedJson::pretty(None::<()>)));
-        }
         let staker = address.to_string();
         let rewards = rest.history_compat().staking_rewards(height).await?;
         let Some((validator, reward)) = rewards.get(&staker) else {
