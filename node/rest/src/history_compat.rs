@@ -92,8 +92,8 @@
 //! ```
 //!
 //! A block the upstream has no snapshot of is **not** a 404: the upstream's file read fails and
-//! it answers 500 with a plain-text body naming the missing file. Observed for block 0 (before its
-//! recording started) and for a height far above the tip:
+//! it answers 500 with a plain-text body naming the missing file. Observed for block 0 (the
+//! genesis state; recording starts at block 1) and for a height far above the tip:
 //!
 //! ```text
 //! GET https://mainnet.historical-staking.provable.com/mainnet/block/0/history/unbonding
@@ -532,5 +532,312 @@ mod tests {
         assert!(cache.in_flight.lock().is_empty());
         // The next request fetches afresh.
         assert_eq!(*cache.get_or_fetch(1, || async { Ok(11) }).await.unwrap(), 11);
+    }
+}
+
+/// A sweep of the *live* upstream API, checking every assumption the compat routes make about its
+/// responses across many heights: that every key and value is a canonical plaintext string, that
+/// each mapping's values have the shape the handlers rely on, that the rewards snapshot joins with
+/// `bonded` the way `get_staking_reward_compat` assumes, and that a height above the tip is
+/// reported as missing. The unit tests above only see four fixtures from one block; this is what
+/// catches the upstream changing shape, or a height range that is shaped differently.
+///
+/// It is ignored by default because it needs the network and makes ~1,000 requests. Run it with:
+///
+/// ```text
+/// cargo test -p snarkos-node-rest live_upstream_sweep -- --ignored --nocapture
+/// ```
+///
+/// Environment: `HISTORY_API_URL` (default: the mainnet instance), `HISTORY_SWEEP_RANDOM` (number
+/// of random heights, default 100), `HISTORY_SWEEP_SEED` (default 0), `HISTORY_SWEEP_TIP` (skip
+/// asking the explorer for the tip).
+#[cfg(test)]
+mod live_upstream_sweep {
+    use super::*;
+    use snarkvm::prelude::{Identifier, Literal, MainnetV0, Plaintext, Value};
+
+    use rand::{RngExt, SeedableRng, rngs::StdRng};
+    use std::{collections::HashSet, str::FromStr};
+
+    type N = MainnetV0;
+
+    /// The two keys of `credits.aleo/metadata`: the number of validators, and of delegators.
+    const METADATA_KEYS: [&str; 2] = [
+        "aleo1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq3ljyzc",
+        "aleo1qgqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqanmpl0",
+    ];
+
+    /// The upstream is a few blocks behind the tip (observed: 5); heights nearer than this are
+    /// not expected to exist yet.
+    const TIP_LAG: u32 = 10;
+
+    fn env_or<T: FromStr>(name: &str, default: T) -> T {
+        std::env::var(name).ok().and_then(|value| value.parse().ok()).unwrap_or(default)
+    }
+
+    /// Checks that a snapshot's keys and values are canonical plaintext strings -- the lookup by
+    /// `Plaintext::to_string` depends on it -- and returns each value parsed.
+    fn check_canonical(
+        height: u32,
+        mapping: SnapshotMapping,
+        snapshot: &MappingSnapshot,
+        failures: &mut Vec<String>,
+    ) -> Vec<(String, Plaintext<N>)> {
+        let mut parsed = Vec::with_capacity(snapshot.len());
+        for (key, value) in snapshot {
+            match Plaintext::<N>::from_str(key) {
+                Ok(plaintext) if plaintext.to_string() == *key => {}
+                Ok(plaintext) => failures.push(format!(
+                    "{height}/{}: key {key:?} is not canonical (reprints as {:?})",
+                    mapping.name(),
+                    plaintext.to_string()
+                )),
+                Err(error) => {
+                    failures.push(format!("{height}/{}: key {key:?} does not parse: {error}", mapping.name()))
+                }
+            }
+            match Value::<N>::from_str(value) {
+                Ok(Value::Plaintext(plaintext)) if plaintext.to_string() == *value => {
+                    parsed.push((key.clone(), plaintext))
+                }
+                Ok(other) => failures.push(format!(
+                    "{height}/{}: value for {key} is not a canonical plaintext: {:?}",
+                    mapping.name(),
+                    other.to_string()
+                )),
+                Err(error) => {
+                    failures.push(format!("{height}/{}: value for {key} does not parse: {error}", mapping.name()))
+                }
+            }
+        }
+        parsed
+    }
+
+    /// Returns the `u64` member of a struct plaintext, if it is one.
+    fn u64_member(plaintext: &Plaintext<N>, member: &str) -> Option<u64> {
+        match plaintext.find(&[Identifier::from_str(member).unwrap()]).ok()? {
+            Plaintext::Literal(Literal::U64(value), _) => Some(*value),
+            _ => None,
+        }
+    }
+
+    fn address_member(plaintext: &Plaintext<N>, member: &str) -> Option<String> {
+        match plaintext.find(&[Identifier::from_str(member).unwrap()]).ok()? {
+            Plaintext::Literal(Literal::Address(address), _) => Some(address.to_string()),
+            _ => None,
+        }
+    }
+
+    /// Checks every snapshot at one height. With `check_join`, also fetches `bonded` at the
+    /// previous height to check the reward arithmetic.
+    async fn check_height(compat: &HistoryCompat, height: u32, check_join: bool) -> Vec<String> {
+        let mut failures = Vec::new();
+        let mut fetch = |name: &str, result: Result<Arc<MappingSnapshot>, RestError>| match result {
+            Ok(snapshot) => Some(snapshot),
+            Err(error) => {
+                failures.push(format!("{height}/{name}: {error}"));
+                None
+            }
+        };
+        let bonded = fetch("bonded", compat.mapping(height, SnapshotMapping::Bonded).await);
+        let delegated = fetch("delegated", compat.mapping(height, SnapshotMapping::Delegated).await);
+        let metadata = fetch("metadata", compat.mapping(height, SnapshotMapping::Metadata).await);
+        let unbonding = fetch("unbonding", compat.mapping(height, SnapshotMapping::Unbonding).await);
+        let withdraw = fetch("withdraw", compat.mapping(height, SnapshotMapping::Withdraw).await);
+        let rewards = match compat.staking_rewards(height).await {
+            Ok(rewards) => Some(rewards),
+            Err(error) => {
+                failures.push(format!("{height}/stakingrewards: {error}"));
+                None
+            }
+        };
+
+        // bonded: { validator: address, microcredits: u64 }, and every validator it names is a
+        // key of `delegated`.
+        let mut bonded_parsed = HashMap::new();
+        if let Some(bonded) = &bonded {
+            for (key, plaintext) in check_canonical(height, SnapshotMapping::Bonded, bonded, &mut failures) {
+                match (address_member(&plaintext, "validator"), u64_member(&plaintext, "microcredits")) {
+                    (Some(validator), Some(microcredits)) => {
+                        if let Some(delegated) = &delegated
+                            && !delegated.contains_key(&validator)
+                        {
+                            failures.push(format!(
+                                "{height}/bonded: {key} is bonded to {validator}, which `delegated` lacks"
+                            ));
+                        }
+                        bonded_parsed.insert(key, (validator, microcredits));
+                    }
+                    _ => failures.push(format!("{height}/bonded: unexpected value shape for {key}: {plaintext}")),
+                }
+            }
+            if bonded.is_empty() {
+                failures.push(format!("{height}/bonded: empty"));
+            }
+        }
+        // delegated: u64.
+        if let Some(delegated) = &delegated {
+            for (key, plaintext) in check_canonical(height, SnapshotMapping::Delegated, delegated, &mut failures) {
+                if !matches!(plaintext, Plaintext::Literal(Literal::U64(_), _)) {
+                    failures.push(format!("{height}/delegated: unexpected value shape for {key}: {plaintext}"));
+                }
+            }
+        }
+        // metadata: exactly the two known keys, u32 values.
+        if let Some(metadata) = &metadata {
+            let keys: HashSet<&str> = metadata.keys().map(String::as_str).collect();
+            if keys != HashSet::from(METADATA_KEYS) {
+                failures.push(format!("{height}/metadata: unexpected keys {keys:?}"));
+            }
+            for (key, plaintext) in check_canonical(height, SnapshotMapping::Metadata, metadata, &mut failures) {
+                if !matches!(plaintext, Plaintext::Literal(Literal::U32(_), _)) {
+                    failures.push(format!("{height}/metadata: unexpected value shape for {key}: {plaintext}"));
+                }
+            }
+        }
+        // unbonding: { microcredits: u64, height: u32 }, with a withdrawal address on file.
+        if let Some(unbonding) = &unbonding {
+            for (key, plaintext) in check_canonical(height, SnapshotMapping::Unbonding, unbonding, &mut failures) {
+                let height_member = plaintext.find(&[Identifier::<N>::from_str("height").unwrap()]).ok();
+                if u64_member(&plaintext, "microcredits").is_none()
+                    || !matches!(height_member, Some(Plaintext::Literal(Literal::U32(_), _)))
+                {
+                    failures.push(format!("{height}/unbonding: unexpected value shape for {key}: {plaintext}"));
+                }
+                if let Some(withdraw) = &withdraw
+                    && !withdraw.contains_key(&key)
+                {
+                    failures.push(format!("{height}/unbonding: {key} is unbonding but `withdraw` lacks it"));
+                }
+            }
+        }
+        // withdraw: address.
+        if let Some(withdraw) = &withdraw {
+            for (key, plaintext) in check_canonical(height, SnapshotMapping::Withdraw, withdraw, &mut failures) {
+                if !matches!(plaintext, Plaintext::Literal(Literal::Address(_), _)) {
+                    failures.push(format!("{height}/withdraw: unexpected value shape for {key}: {plaintext}"));
+                }
+            }
+        }
+        // stakingrewards: one row per bonded staker, naming the validator it is bonded to, and
+        // (with the previous height) bonded@h == bonded@(h-1) + reward for stakers who did not
+        // bond or unbond in block h -- which is all but a handful at most.
+        if let (Some(rewards), Some(_)) = (&rewards, &bonded) {
+            let reward_stakers: HashSet<&String> = rewards.keys().collect();
+            let bonded_stakers: HashSet<&String> = bonded_parsed.keys().collect();
+            if reward_stakers != bonded_stakers {
+                let only_rewards = reward_stakers.difference(&bonded_stakers).count();
+                let only_bonded = bonded_stakers.difference(&reward_stakers).count();
+                failures.push(format!(
+                    "{height}/stakingrewards: stakers differ from bonded ({only_rewards} only in rewards, {only_bonded} only in bonded)"
+                ));
+            }
+            for (staker, (validator, _)) in rewards.iter() {
+                if let Some((bonded_validator, _)) = bonded_parsed.get(staker)
+                    && bonded_validator != validator
+                {
+                    failures.push(format!(
+                        "{height}/stakingrewards: {staker} rewarded via {validator} but bonded to {bonded_validator}"
+                    ));
+                }
+            }
+            // The upstream has no snapshot of block 0 (the genesis state), so block 1 cannot be
+            // joined with its predecessor.
+            if check_join && height > 1 {
+                match compat.mapping(height - 1, SnapshotMapping::Bonded).await {
+                    Ok(previous) => {
+                        let mut mismatches = Vec::new();
+                        for (staker, (_, reward)) in rewards.iter() {
+                            let Some((_, now)) = bonded_parsed.get(staker) else { continue };
+                            let Some(before) = previous
+                                .get(staker)
+                                .and_then(|value| u64_member(&Plaintext::<N>::from_str(value).ok()?, "microcredits"))
+                            else {
+                                continue;
+                            };
+                            if before + reward != *now {
+                                mismatches.push(format!("{staker}: {before} + {reward} != {now}"));
+                            }
+                        }
+                        // A staker who bonded or unbonded in this block legitimately breaks the
+                        // identity; more than a few is a shape change.
+                        if mismatches.len() > rewards.len() / 100 + 3 {
+                            failures.push(format!(
+                                "{height}/stakingrewards: bonded@h != bonded@(h-1) + reward for {} of {} stakers, e.g. {:?}",
+                                mismatches.len(),
+                                rewards.len(),
+                                &mismatches[..mismatches.len().min(3)]
+                            ));
+                        }
+                    }
+                    Err(error) => failures.push(format!("{}/bonded (for the join check): {error}", height - 1)),
+                }
+            }
+        }
+        failures
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    #[ignore = "makes ~1,000 requests to the live upstream; run explicitly"]
+    async fn sweep() {
+        let base_url = std::env::var("HISTORY_API_URL")
+            .unwrap_or_else(|_| "https://mainnet.historical-staking.provable.com".to_string());
+        let compat = Arc::new(HistoryCompat::new(&base_url, "mainnet").unwrap());
+        let tip: u32 = match std::env::var("HISTORY_SWEEP_TIP") {
+            Ok(tip) => tip.parse().unwrap(),
+            Err(_) => reqwest::get("https://api.explorer.provable.com/v1/mainnet/latest/height")
+                .await
+                .unwrap()
+                .text()
+                .await
+                .unwrap()
+                .trim()
+                .parse()
+                .unwrap(),
+        };
+        let seed: u64 = env_or("HISTORY_SWEEP_SEED", 0);
+        let random: usize = env_or("HISTORY_SWEEP_RANDOM", 100);
+        println!("upstream {base_url}, tip {tip}, {random} random heights, seed {seed}");
+
+        // Deliberate heights: the earliest blocks, the old height-encoding boundaries, every
+        // consensus version boundary and its neighbours, and the blocks just behind the tip.
+        let mut deliberate: Vec<u32> = vec![1, 2, 3, 10, 100, 1_000, 65_535, 65_536, 65_537];
+        for (_, boundary) in snarkvm::console::network::MAINNET_V0_CONSENSUS_VERSION_HEIGHTS {
+            if boundary > 0 && boundary <= tip - TIP_LAG {
+                deliberate.extend([boundary - 1, boundary, boundary + 1]);
+            }
+        }
+        deliberate.extend([tip - TIP_LAG, tip - TIP_LAG - 1, tip - 50, tip - 1_000]);
+        let mut rng = StdRng::seed_from_u64(seed);
+        let random_heights: Vec<u32> = (0..random).map(|_| rng.random_range(1..tip - TIP_LAG)).collect();
+
+        // Every deliberate height and a fifth of the random ones get the (h-1) join check.
+        let mut tasks = tokio::task::JoinSet::new();
+        for (index, height) in deliberate.iter().chain(&random_heights).copied().enumerate() {
+            let compat = compat.clone();
+            let check_join = index < deliberate.len() || index % 5 == 0;
+            tasks.spawn(async move { (height, check_height(&compat, height, check_join).await) });
+        }
+        let mut failures = Vec::new();
+        let mut checked = 0;
+        while let Some(result) = tasks.join_next().await {
+            let (height, height_failures) = result.unwrap();
+            checked += 1;
+            if height_failures.is_empty() {
+                println!("ok   {height}");
+            } else {
+                println!("FAIL {height}: {}", height_failures.join("; "));
+            }
+            failures.extend(height_failures);
+        }
+
+        // A height the upstream cannot have yet is reported as missing, not as an outage.
+        match compat.mapping(tip + 1_000_000, SnapshotMapping::Unbonding).await {
+            Err(RestError::NotFound(_)) => println!("ok   {} (missing, as expected)", tip + 1_000_000),
+            other => failures.push(format!("{}: expected not-found, got {other:?}", tip + 1_000_000)),
+        }
+
+        println!("checked {checked} heights, {} failures", failures.len());
+        assert!(failures.is_empty(), "{}", failures.join("\n"));
     }
 }
