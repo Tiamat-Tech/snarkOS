@@ -18,6 +18,10 @@ edition = "2024"
 
 [features]
 test = [ ]
+test-helpers = [
+  "snarkos-node-bft-ledger-service/mock",
+  "snarkvm/test-helpers"
+]
 locktick = [
   "dep:locktick",
   "snarkos-node-tcp/locktick",
@@ -138,7 +142,7 @@ features = [ "test" ]
 
 [dev-dependencies.snarkos-node-router]
 path = "."
-features = [ "test" ]
+features = [ "test", "test-helpers" ]
 
 [dev-dependencies.snarkos-node-router-messages]
 workspace = true
