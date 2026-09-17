@@ -4488,9 +4488,9 @@ dependencies = [
 
 [[package]]
 name = "rustls"
-version = "0.23.43"
+version = "0.23.45"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0283386ce02abc0151e1761d08802dfe86c173b0b494af5cbc086574e453da06"
+checksum = "0d41d731c7d2f962d1ccc364cec258de3c0e93b38c2fb3ba97ac74513048d634"
 dependencies = [
  "aws-lc-rs",
  "log",
@@ -5034,7 +5034,7 @@ dependencies = [
 
 [[package]]
 name = "snarkos"
-version = "4.10.0"
+version = "4.10.1"
 dependencies = [
  "built",
  "clap",
@@ -5062,7 +5062,7 @@ dependencies = [
 
 [[package]]
 name = "snarkos-account"
-version = "4.10.0"
+version = "4.10.1"
 dependencies = [
  "colored 3.1.1",
  "snarkvm",
@@ -5070,7 +5070,7 @@ dependencies = [
 
 [[package]]
 name = "snarkos-cli"
-version = "4.10.0"
+version = "4.10.1"
 dependencies = [
  "aleo-std",
  "anstyle",
@@ -5114,7 +5114,7 @@ dependencies = [
 
 [[package]]
 name = "snarkos-display"
-version = "4.10.0"
+version = "4.10.1"
 dependencies = [
  "anyhow",
  "crossterm",
@@ -5127,7 +5127,7 @@ dependencies = [
 
 [[package]]
 name = "snarkos-node"
-version = "4.10.0"
+version = "4.10.1"
 dependencies = [
  "aleo-std",
  "anyhow",
@@ -5171,7 +5171,7 @@ dependencies = [
 
 [[package]]
 name = "snarkos-node-bft"
-version = "4.10.0"
+version = "4.10.1"
 dependencies = [
  "aleo-std",
  "anyhow",
@@ -5225,7 +5225,7 @@ dependencies = [
 
 [[package]]
 name = "snarkos-node-bft-events"
-version = "4.10.0"
+version = "4.10.1"
 dependencies = [
  "anyhow",
  "bytes",
@@ -5248,7 +5248,7 @@ dependencies = [
 
 [[package]]
 name = "snarkos-node-bft-ledger-service"
-version = "4.10.0"
+version = "4.10.1"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -5267,7 +5267,7 @@ dependencies = [
 
 [[package]]
 name = "snarkos-node-bft-storage-service"
-version = "4.10.0"
+version = "4.10.1"
 dependencies = [
  "aleo-std",
  "anyhow",
@@ -5282,7 +5282,7 @@ dependencies = [
 
 [[package]]
 name = "snarkos-node-cdn"
-version = "4.10.0"
+version = "4.10.1"
 dependencies = [
  "anyhow",
  "bincode",
@@ -5304,7 +5304,7 @@ dependencies = [
 
 [[package]]
 name = "snarkos-node-consensus"
-version = "4.10.0"
+version = "4.10.1"
 dependencies = [
  "aleo-std",
  "anyhow",
@@ -5331,7 +5331,7 @@ dependencies = [
 
 [[package]]
 name = "snarkos-node-metrics"
-version = "4.10.0"
+version = "4.10.1"
 dependencies = [
  "built",
  "locktick",
@@ -5347,7 +5347,7 @@ dependencies = [
 
 [[package]]
 name = "snarkos-node-network"
-version = "4.10.0"
+version = "4.10.1"
 dependencies = [
  "anyhow",
  "built",
@@ -5369,7 +5369,7 @@ dependencies = [
 
 [[package]]
 name = "snarkos-node-rest"
-version = "4.10.0"
+version = "4.10.1"
 dependencies = [
  "aleo-std",
  "anyhow",
@@ -5407,7 +5407,7 @@ dependencies = [
 
 [[package]]
 name = "snarkos-node-router"
-version = "4.10.0"
+version = "4.10.1"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -5443,7 +5443,7 @@ dependencies = [
 
 [[package]]
 name = "snarkos-node-router-messages"
-version = "4.10.0"
+version = "4.10.1"
 dependencies = [
  "bytes",
  "indexmap 2.14.0",
@@ -5460,7 +5460,7 @@ dependencies = [
 
 [[package]]
 name = "snarkos-node-sync"
-version = "4.10.0"
+version = "4.10.1"
 dependencies = [
  "anyhow",
  "futures",
@@ -5486,7 +5486,7 @@ dependencies = [
 
 [[package]]
 name = "snarkos-node-sync-communication-service"
-version = "4.10.0"
+version = "4.10.1"
 dependencies = [
  "async-trait",
  "tokio",
@@ -5494,7 +5494,7 @@ dependencies = [
 
 [[package]]
 name = "snarkos-node-sync-locators"
-version = "4.10.0"
+version = "4.10.1"
 dependencies = [
  "anyhow",
  "indexmap 2.14.0",
@@ -5505,7 +5505,7 @@ dependencies = [
 
 [[package]]
 name = "snarkos-node-tcp"
-version = "4.10.0"
+version = "4.10.1"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -5523,7 +5523,7 @@ dependencies = [
 
 [[package]]
 name = "snarkos-utilities"
-version = "4.10.0"
+version = "4.10.1"
 dependencies = [
  "anyhow",
  "locktick",
@@ -6785,7 +6785,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand",
- "getrandom 0.4.3",
+ "getrandom 0.3.4",
  "once_cell",
  "rustix 1.1.4",
  "windows-sys 0.61.2",
@@ -8072,13 +8072,14 @@ checksum = "1ebf944e87a7c253233ad6766e082e3cd714b5d03812acc24c318f549614536e"
 
 [[package]]
 name = "wnaf"
-version = "0.14.0"
+version = "0.14.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ab12e7090f27e2ffd9322651492942d50c2926094af30601e1964337db39daf1"
+checksum = "795ca18b3fdb5e62bf982199278341ddcf7ebf7d32e25e212ad05d496e95f6fa"
 dependencies = [
  "ff",
  "group",
  "hybrid-array",
+ "primefield",
 ]
 
 [[package]]
