@@ -148,11 +148,18 @@ const MAX_STATE_ROOT_RANGE: u32 = 5_000;
 /// request.
 ///
 /// Unlike a hash, a state root or a header, a block's transactions have no fixed size, so this
-/// cannot be sized to fit a response inside one block the way the others are. It matches
-/// `MAX_BLOCK_RANGE` instead: for any given range this route returns a strict subset of what
-/// `get_blocks` already returns, so it introduces no response the node could not already be asked
-/// for, and is considerably cheaper than the `get_blocks` call it replaces.
-const MAX_BLOCK_TRANSACTIONS_RANGE: u32 = MAX_BLOCK_RANGE;
+/// cannot be sized to fit a response inside one block the way the others are. What bounds it is
+/// the largest response the node already produces over the same data: a block's bytes are
+/// dominated by its authority, so this many blocks' transactions weigh less than the
+/// `MAX_BLOCK_RANGE` whole blocks `get_blocks` serves, and the route asks nothing of the node it
+/// could not already be asked for.
+///
+/// That is a bound on bytes rather than on blocks, and it does not survive an arbitrary raise:
+/// mainnet has stretches where transactions are most of a block, so setting this to
+/// `MAX_BLOCK_HEADER_RANGE` would let the route return more in one response than `get_blocks`
+/// can. `the_transactions_maximum_stays_within_a_get_blocks_response` holds this against measured
+/// figures and rejects a maximum nobody has measured.
+const MAX_BLOCK_TRANSACTIONS_RANGE: u32 = 160;
 
 /// Validates a block range against the given maximum, and returns `(start, end)`.
 ///
@@ -444,8 +451,8 @@ impl<N: Network, C: ConsensusStorage<N>, R: Routing<N>> Rest<N, C, R> {
     ///
     /// This is the range form of `/block/{height}/transactions`. It carries the part of a block a
     /// consumer reconstructing transaction trees needs -- the confirmed transaction ids and their
-    /// contents, including the program a deployment carries -- without `authority`, which is over
-    /// 99% of a block's bytes and which no transaction tree touches.
+    /// contents, including the program a deployment carries -- without `authority`, which is 97% of
+    /// mainnet's block bytes in aggregate and which no transaction tree touches.
     ///
     /// A height the node does not have is a 404, and the whole request fails rather than returning
     /// a short array. Note that this is only visible on `/v2`: on the default and `/v1` prefixes
@@ -1856,15 +1863,36 @@ mod range_tests {
         }
     }
 
+    /// The heaviest `get_blocks` response `MAX_BLOCK_RANGE` can produce, and the heaviest response
+    /// this route can produce at each maximum that has been measured, in json bytes.
+    ///
+    /// Both are maxima over every contiguous run of heights in the sample, not averages, because a
+    /// caller picks the heights. Sampled from mainnet on 2026-09-20 over 209,683 heights in 670
+    /// runs of 320 contiguous blocks, spanning 7,771 to 22,094,742 and deliberately over-weighting
+    /// the 2024-2025 stretch where transactions are the largest share of a block. The heaviest
+    /// `get_blocks` response in that sample is heights 11,076,870 to 11,076,919; the heaviest
+    /// transactions responses are all around height 3,325,700.
+    const HEAVIEST_GET_BLOCKS_RESPONSE_BYTES: u32 = 28_068_594;
+    const HEAVIEST_TRANSACTIONS_RESPONSE_BYTES: [(u32, u32); 4] =
+        [(50, 10_247_221), (160, 25_736_904), (176, 27_927_850), (320, 47_465_514)];
+
     #[test]
-    fn the_transactions_maximum_matches_get_blocks() {
+    fn the_transactions_maximum_stays_within_a_get_blocks_response() {
         // `each_maximum_bounds_its_response_to_at_most_one_block` deliberately does not cover this
         // route: a block's transactions have no fixed size, so no per-item figure bounds it. The
-        // property that holds instead is that for any range it returns a subset of what
-        // `get_blocks` returns for the same range, which is only true while the maximums agree.
-        assert_eq!(
-            MAX_BLOCK_TRANSACTIONS_RANGE, MAX_BLOCK_RANGE,
-            "the transactions route can now be asked for a range `get_blocks` would refuse"
+        // property that holds instead is that the heaviest response this maximum can produce is no
+        // larger than the heaviest `get_blocks` already produces, so the route introduces no
+        // response the node could not already be asked for.
+        let heaviest = HEAVIEST_TRANSACTIONS_RESPONSE_BYTES
+            .iter()
+            .find(|(max, _)| *max == MAX_BLOCK_TRANSACTIONS_RANGE)
+            .map(|(_, bytes)| *bytes)
+            .expect("this maximum has not been measured against mainnet; measure it before using it");
+
+        assert!(
+            heaviest <= HEAVIEST_GET_BLOCKS_RESPONSE_BYTES,
+            "{MAX_BLOCK_TRANSACTIONS_RANGE} blocks' transactions reach {heaviest} bytes, more than \
+             the {HEAVIEST_GET_BLOCKS_RESPONSE_BYTES} bytes of the heaviest {MAX_BLOCK_RANGE} whole blocks"
         );
     }
 
@@ -1876,6 +1904,7 @@ mod range_tests {
             ("hashes", MAX_BLOCK_HASH_RANGE),
             ("headers", MAX_BLOCK_HEADER_RANGE),
             ("stateRoots", MAX_STATE_ROOT_RANGE),
+            ("transactions", MAX_BLOCK_TRANSACTIONS_RANGE),
         ] {
             assert!(max > MAX_BLOCK_RANGE, "the {name} maximum is no better than fetching whole blocks");
         }
