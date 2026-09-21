@@ -152,6 +152,9 @@ pub fn update_block_metrics<N: Network>(block: &Block<N>) {
     // Update aborted transactions and solutions.
     increment_gauge(blocks::ABORTED_TRANSACTIONS, block.aborted_transaction_ids().len() as f64);
     increment_gauge(blocks::ABORTED_SOLUTIONS, block.aborted_solution_ids().len() as f64);
+
+    // Update the active consensus version.
+    gauge(consensus::VERSION, N::CONSENSUS_VERSION(block.height()).map_or(0.0, |version| version as u16 as f64));
 }
 
 pub fn add_transmission_latency_metric<N: Network>(
