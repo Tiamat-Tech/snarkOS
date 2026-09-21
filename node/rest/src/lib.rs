@@ -645,9 +645,9 @@ mod route_tests {
     async fn block_transactions_omits_the_authority() {
         let rest = sample_rest().await;
 
-        // The reason this route exists. `authority` is the AleoBFT subdag and its signatures, over
-        // 99% of a mainnet block's bytes, and no transaction tree touches it. A consumer that
-        // needs transaction contents should not have to download it to throw it away.
+        // The reason this route exists. `authority` is the AleoBFT subdag and its signatures, 97%
+        // of mainnet's block bytes in aggregate, and no transaction tree touches it. A consumer
+        // that needs transaction contents should not have to download it to throw it away.
         let (status, projection) = get(&rest, "/blocks/transactions?start=0&end=1").await;
         assert_eq!(status, StatusCode::OK);
         assert!(!projection.contains("authority"), "the projection carries the authority");
@@ -704,7 +704,7 @@ mod route_tests {
 
         // One past each route's maximum. These are rejected before any lookup, so the fact that
         // the test ledger has a single block does not matter.
-        for (route, over_max) in [("hashes", 5_001), ("headers", 321), ("stateRoots", 5_001), ("transactions", 51)] {
+        for (route, over_max) in [("hashes", 5_001), ("headers", 321), ("stateRoots", 5_001), ("transactions", 161)] {
             let (status, body) = get(&rest, &format!("/blocks/{route}?start=0&end={over_max}")).await;
             assert_eq!(status, StatusCode::BAD_REQUEST, "{route} accepted a range over its maximum");
             assert!(body.contains("Cannot request more than"), "{route} gave an unexpected error: {body}");
@@ -717,7 +717,7 @@ mod route_tests {
 
         // Exactly each route's maximum passes the range check. The lookups then fail on the test
         // ledger's single block, so a 404 here still proves the maximum itself was not the reason.
-        for (route, max) in [("hashes", 5_000), ("headers", 320), ("stateRoots", 5_000), ("transactions", 50)] {
+        for (route, max) in [("hashes", 5_000), ("headers", 320), ("stateRoots", 5_000), ("transactions", 160)] {
             let (status, body) = get(&rest, &format!("/blocks/{route}?start=0&end={max}")).await;
             assert_eq!(status, StatusCode::NOT_FOUND, "{route} rejected a range at its maximum");
             assert!(!body.contains("Cannot request more than"), "{route} rejected its own maximum: {body}");
