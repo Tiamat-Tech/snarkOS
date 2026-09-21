@@ -2825,17 +2825,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "json5"
-version = "0.4.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "96b0db21af676c1ce64250b5f40f3ce2cf27e4e47cb91ed91eb6fe9350b430c1"
-dependencies = [
- "pest",
- "pest_derive",
- "serde",
-]
-
-[[package]]
 name = "jsonwebtoken"
 version = "9.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2903,16 +2892,6 @@ dependencies = [
  "libc",
  "libz-sys",
  "pkg-config",
-]
-
-[[package]]
-name = "libloading"
-version = "0.8.9"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d7c4b02199fee7c5d21a5ae7d8cfa79a6ef5bb2fc834d6e9058e89c825efdc55"
-dependencies = [
- "cfg-if",
- "windows-link",
 ]
 
 [[package]]
@@ -5548,8 +5527,6 @@ dependencies = [
  "snarkvm-ledger",
  "snarkvm-metrics",
  "snarkvm-parameters",
- "snarkvm-slipstream-plugin-interface",
- "snarkvm-slipstream-plugin-manager",
  "snarkvm-synthesizer",
  "snarkvm-utilities",
  "ureq",
@@ -6274,7 +6251,6 @@ dependencies = [
  "snarkvm-ledger-narwhal-batch-certificate",
  "snarkvm-ledger-puzzle",
  "snarkvm-metrics",
- "snarkvm-slipstream-plugin-manager",
  "snarkvm-synthesizer-program",
  "snarkvm-synthesizer-snark",
  "snarkvm-utilities",
@@ -6328,28 +6304,6 @@ dependencies = [
  "snarkvm-utilities",
  "thiserror 2.0.20",
  "ureq",
-]
-
-[[package]]
-name = "snarkvm-slipstream-plugin-interface"
-version = "4.9.0"
-source = "git+https://github.com/ProvableHQ/snarkVM.git?rev=e0f68fae#e0f68fae7d9c45e5efd22400b31c5b4d7989cea5"
-dependencies = [
- "anyhow",
-]
-
-[[package]]
-name = "snarkvm-slipstream-plugin-manager"
-version = "4.9.0"
-source = "git+https://github.com/ProvableHQ/snarkVM.git?rev=e0f68fae#e0f68fae7d9c45e5efd22400b31c5b4d7989cea5"
-dependencies = [
- "anyhow",
- "json5",
- "libloading",
- "serde_json",
- "snarkvm-slipstream-plugin-interface",
- "thiserror 2.0.20",
- "tracing",
 ]
 
 [[package]]
