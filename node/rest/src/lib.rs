@@ -172,22 +172,11 @@ impl<N: Network, C: ConsensusStorage<N>, R: Routing<N>> Rest<N, C, R> {
                 .expect("Couldn't set up rate limiting for the REST server!"),
         );
 
-        // Build the JWT auth-protected endpoints. #[cfg] cannot appear inside a method chain, so we
-        // build this router as a named binding and conditionally extend it before applying the layer.
+        // Build the JWT auth-protected endpoints.
         let auth_routes = axum::Router::new()
             .route("/node/address", get(Self::get_node_address))
             .route("/program/{id}/mapping/{name}", get(Self::get_mapping_values))
             .route("/db_backup", post(Self::db_backup));
-
-        // Slipstream plugin management endpoints require auth.
-        #[cfg(feature = "slipstream-plugins")]
-        let auth_routes = auth_routes
-            .route("/slipstream/plugins", get(Self::slipstream_list_plugins).post(Self::slipstream_load_plugin))
-            .route(
-                "/slipstream/plugins/{name}",
-                // TODO: PUT (reload) is not yet implemented.
-                axum::routing::delete(Self::slipstream_unload_plugin),
-            );
 
         let routes = axum::Router::new()
             .merge(auth_routes.route_layer(middleware::from_fn(auth_middleware)))
