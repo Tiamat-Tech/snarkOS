@@ -85,6 +85,7 @@ impl<N: Network, C: ConsensusStorage<N>> Validator<N, C> {
         bft_ip: Option<SocketAddr>,
         rest_ip: Option<SocketAddr>,
         rest_rps: u32,
+        history_api_url: Option<String>,
         account: Account<N>,
         trusted_peers: &[SocketAddr],
         trusted_validators: &[SocketAddr],
@@ -187,6 +188,7 @@ impl<N: Network, C: ConsensusStorage<N>> Validator<N, C> {
                 Rest::start(
                     rest_ip,
                     rest_rps,
+                    history_api_url,
                     Some(consensus),
                     ledger.clone(),
                     Arc::new(node.clone()),
@@ -567,6 +569,7 @@ mod tests {
             None,
             Some(rest),
             10,
+            None,
             account,
             &[],
             &[],
