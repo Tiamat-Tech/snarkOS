@@ -13,8 +13,28 @@ repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 read -r -p "Enter the total number of validators (default: 4): " total_validators
 total_validators=${total_validators:-4}
 
+# Read the total number of clients from the user or use a default value of 2
+read -r -p "Enter the total number of clients (default: 2): " total_clients
+total_clients=${total_clients:-2}
+
+# Read the network ID from user or use a default value of 1
+read -r -p "Enter the network ID (mainnet = 0, testnet = 1, canary = 2) (default: 1): " network_id
+network_id=${network_id:-1}
+
+case "$network_id" in
+  0) network_name="mainnet" ;;
+  1) network_name="testnet" ;;
+  2) network_name="canary" ;;
+  *) network_name="network-$network_id" ;;
+esac
+
 # Regenerate the Prometheus scrape config so it targets exactly the validators
 # this devnet will start (one target per validator's metrics port, 9000 + index).
+#
+# The target labels mirror the ones the production scrape config attaches, because the
+# Grafana dashboard provisioned alongside this stack is the production dashboard and its
+# queries select on them. Clients are started without `--metrics`, so every target here
+# is a validator.
 prometheus_yml="$repo_root/node/metrics/prometheus.yml"
 {
   echo "global:"
@@ -40,19 +60,17 @@ prometheus_yml="$repo_root/node/metrics/prometheus.yml"
   echo "  scheme: http"
   echo "  follow_redirects: true"
   echo "  static_configs:"
-  echo "  - targets:"
   for ((validator_index = 0; validator_index < total_validators; validator_index++)); do
-    echo "    - host.docker.internal:$((9000 + validator_index))"
+    metrics_port=$((9000 + validator_index))
+    echo "  - targets:"
+    echo "    - host.docker.internal:$metrics_port"
+    echo "    labels:"
+    echo "      instance_name: validator-$validator_index"
+    echo "      public_ip: 127.0.0.1:$metrics_port"
+    echo "      snarkos_role: validator"
+    echo "      snarkos_network: $network_name"
   done
 } >"$prometheus_yml"
-
-# Read the total number of clients from the user or use a default value of 2
-read -r -p "Enter the total number of clients (default: 2): " total_clients
-total_clients=${total_clients:-2}
-
-# Read the network ID from user or use a default value of 1
-read -r -p "Enter the network ID (mainnet = 0, testnet = 1, canary = 2) (default: 1): " network_id
-network_id=${network_id:-1}
 
 # Ask the user if they want to run 'cargo install --locked --path .' or use a pre-installed binary
 read -r -p "Do you want to run 'cargo install --locked --path .' to build the binary? (y/n, default: y): " build_binary
