@@ -8,51 +8,46 @@ The `snarkos-node-metrics` crate provides access to metrics for the `snarkos` no
 
 ## Instructions
 
-#### Quick Start
+#### Quick Start (via `scripts/devnet.sh`)
 
-To start up Grafana and Prometheus, run the following command:
+`scripts/devnet.sh` brings this stack up automatically: it regenerates `prometheus.yml`
+to match the validator count you choose, runs `docker compose up --detach` (falling
+back to `docker-compose` if that's what's installed), and opens
+`http://localhost:3000/d/snarkos` once Grafana is ready. The Prometheus datasource and
+the snarkOS dashboard are pre-provisioned (`node/metrics/provisioning/`), so no manual
+datasource or import steps are needed. Grafana still requires authentication for any
+URL, so the first thing you'll see is its login page — log in with `admin`/`admin` (you
+can skip the "change password" prompt) and it redirects you straight to the dashboard.
+This is a one-time-per-browser-session login, not a bug in the automation.
+
+If Docker isn't installed, `devnet.sh` skips this step with a warning and the devnet
+still starts normally; install Docker and re-run.
+
+#### Running the stack standalone
+
+To start up Grafana and Prometheus without `devnet.sh` (e.g. against nodes you started
+yourself with `--metrics`):
 ```bash
 cd node/metrics
-docker-compose up --detach
+docker compose up --detach
 ```
 
 To check that the metrics are running, go to http://localhost:9000.
 
-Lastly, go to [http://localhost:3000/](http://localhost:3000/) to see the metrics dashboard.
-The initial login is `admin` and the password is `admin`.
+Then go to [http://localhost:3000/](http://localhost:3000/) — the initial login is
+`admin`/`admin`. The Prometheus datasource and snarkOS dashboard are already
+provisioned (same as above), so the dashboard should be populated right away. The
+scrape targets in the committed `prometheus.yml` default to a single node on `:9000`;
+edit it if you're running more than one node with metrics enabled.
 
-#### First-Time Setup
+#### Manual import (fallback)
 
-1. **Start snarkOS with Metrics Enabled**
-    - Launch snarkOS using the command line with the `--metrics` flag to enable metrics tracking.
+If you'd rather configure Grafana by hand, or need to import the dashboard into a
+different Grafana instance, `node/metrics/snarkOS-grafana.json` is still the
+importable, manual-import version (it prompts you to pick a datasource on import,
+rather than assuming the provisioned one):
 
-2. **Navigate to Metrics Directory**
-    - Change your current directory to `node/metrics` using the command `cd node/metrics`.
-
-3. **Deploy Prometheus and Grafana with Docker**
-    - Execute `docker-compose up --detach`. This command uses the `docker-compose.yml` file to set up two containers: Prometheus and Grafana, eliminating the need for direct installation.
-
-4. **Verify Metrics Accessibility**
-    - Use the command `curl http://localhost:9000` to check if the metrics are accessible at the specified URL.
-
-5. **Access Grafana Dashboard**
-    - Open your web browser and navigate to `http://localhost:3000`. This is the Grafana user interface.
-
-6. **Grafana Login Process**
-    - Log in using the default credentials: username `admin` and password `admin`. On first login, you'll be prompted to change the password, but you can choose to skip this step.
-
-7. **Configure Prometheus Data Source**
-    - In Grafana, navigate to `Datasources`.
-    - Select `Prometheus` as the data source.
-    - Enter `http://prometheus:9090` as the server URL.
-    - Confirm the setup by clicking `Save and Test`. You should see a message confirming successful connection to the Prometheus API.
-
-8. **Import snarkOS Dashboard**
-    - Return to the Grafana home page by clicking `Home` in the top breadcrumb navigation.
-    - Click on the arrow next to the `+` icon in the top right corner.
-    - Select `Import dashboard`.
-    - Drag and drop the `node/metrics/snarkOS-grafana.json` file into the top panel of the import interface.
-    - From the dropdown box, choose the Prometheus data source you previously set up.
-    - Finalize the process by clicking `Import`.
-
-Following these steps will successfully set up and configure a monitoring environment for your snarkOS nodes using Docker, Prometheus, and Grafana.
+1. In Grafana, go to `Connections` → `Data sources` → `Add data source` → `Prometheus`,
+   set the URL to `http://prometheus:9090`, and `Save & test`.
+2. Go to `Dashboards` → `New` → `Import`, drag in `node/metrics/snarkOS-grafana.json`,
+   pick the datasource you just added, and `Import`.

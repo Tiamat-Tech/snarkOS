@@ -169,5 +169,52 @@ if [ "$total_clients" -ne 0 ]; then
   done
 fi
 
+# Bring up the Prometheus/Grafana stack and open the dashboard, if Docker is available.
+# This must never abort the devnet itself, so failures here only print a warning.
+compose_cmd=""
+if docker compose version >/dev/null 2>&1; then
+  compose_cmd="docker compose"
+elif command -v docker-compose >/dev/null 2>&1; then
+  compose_cmd="docker-compose"
+fi
+
+if [ -n "$compose_cmd" ]; then
+  metrics_compose_file="$repo_root/node/metrics/docker-compose.yml"
+  $compose_cmd -f "$metrics_compose_file" up --detach
+  # Compose won't restart an already-running container just because the
+  # bind-mounted prometheus.yml changed underneath it, so force a restart to
+  # pick up the scrape targets regenerated above.
+  $compose_cmd -f "$metrics_compose_file" restart prometheus
+
+  grafana_url="http://localhost:3000/d/snarkos"
+  grafana_ready=""
+  for _ in $(seq 1 30); do
+    if curl -sf http://localhost:3000/api/health >/dev/null 2>&1; then
+      grafana_ready="1"
+      break
+    fi
+    sleep 1
+  done
+
+  if [ -n "$grafana_ready" ]; then
+    opener=""
+    if command -v xdg-open >/dev/null 2>&1; then
+      opener="xdg-open"
+    elif command -v open >/dev/null 2>&1; then
+      opener="open"
+    fi
+
+    if [ -n "$opener" ]; then
+      "$opener" "$grafana_url" >/dev/null 2>&1 &
+    else
+      echo "Grafana is up at $grafana_url (no xdg-open/open found to launch a browser automatically)."
+    fi
+  else
+    echo "Grafana didn't become ready in time; check it manually at $grafana_url."
+  fi
+else
+  echo "Docker not found; skipping automatic Prometheus/Grafana setup. See node/metrics/README.md to start it manually."
+fi
+
 # Attach to the tmux session to view and interact with the windows
 tmux attach-session -t "devnet"
