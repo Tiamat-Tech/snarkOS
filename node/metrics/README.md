@@ -39,6 +39,10 @@ attaches those to each scrape target so the queries carry over from the cloud da
 unchanged. A few panels compare against `offset 1d` or `offset 7d` and stay empty until a
 devnet has been running long enough to have that history.
 
+The `Transmission Data` row needs traffic to show anything, so answer `y` to `devnet.sh`'s
+"generate transactions" prompt. Its solution panels stay at zero either way: solutions come
+from provers, and `devnet.sh` starts only validators and clients.
+
 #### Running the stack standalone
 
 To start up Grafana and Prometheus without `devnet.sh` (e.g. against nodes you started

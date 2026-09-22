@@ -7881,24 +7881,11 @@
                 "uid": "prometheus"
               },
               "editorMode": "code",
-              "expr": "max by (public_ip, instance_name) (\n  snarkos_consensus_transmission_latency{transmission_type=\"transaction\",snarkos_role=~\"$role\"}\n)",
-              "hide": true,
+              "expr": "avg by (instance_name, public_ip) (\n  rate(snarkos_consensus_transmission_latency_sum{snarkos_network=\"[[network]]\",snarkos_role=~\"[[role]]\",transmission_type=\"transaction\"}[$__rate_interval])\n  / rate(snarkos_consensus_transmission_latency_count{snarkos_network=\"[[network]]\",snarkos_role=~\"[[role]]\",transmission_type=\"transaction\"}[$__rate_interval])\n)",
               "instant": false,
               "legendFormat": "{{instance_name}} ({{public_ip}})",
               "range": true,
               "refId": "A"
-            },
-            {
-              "datasource": {
-                "type": "prometheus",
-                "uid": "prometheus"
-              },
-              "editorMode": "code",
-              "expr": "avg by (instance_name,public_ip,transmission_type) (snarkos_consensus_transmission_latency{snarkos_network=\"[[network]]\",snarkos_role=~\"[[role]]\",transmission_type=\"transaction\"})",
-              "instant": false,
-              "intervalFactor": 1,
-              "range": true,
-              "refId": "B"
             }
           ],
           "title": "Avg Transaction Latency (Seconds)",
@@ -8003,10 +7990,9 @@
                 "uid": "prometheus"
               },
               "editorMode": "code",
-              "expr": "avg(\n  avg_over_time(\n    snarkos_consensus_transmission_latency{transmission_type=\"solution\", snarkos_role=~\"[[role]]\"}[1m]\n  )\n) by (instance_name)",
+              "expr": "avg by (instance_name, public_ip) (\n  rate(snarkos_consensus_transmission_latency_sum{snarkos_network=\"[[network]]\",snarkos_role=~\"[[role]]\",transmission_type=\"solution\"}[$__rate_interval])\n  / rate(snarkos_consensus_transmission_latency_count{snarkos_network=\"[[network]]\",snarkos_role=~\"[[role]]\",transmission_type=\"solution\"}[$__rate_interval])\n)",
               "instant": false,
-              "intervalFactor": 1,
-              "legendFormat": "{{public_ip}} {{instance_name}} (GCP)",
+              "legendFormat": "{{instance_name}} ({{public_ip}})",
               "range": true,
               "refId": "A"
             }

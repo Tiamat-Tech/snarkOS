@@ -28,6 +28,17 @@ case "$network_id" in
   *) network_name="network-$network_id" ;;
 esac
 
+# Ask the user whether validator 0 should drive the network with transactions. Nothing else
+# in a devnet creates them, so the dashboard's transmission panels stay at zero without it.
+read -r -p "Do you want validator 0 to generate transactions? (y/n, default: n): " dev_txs
+dev_txs=${dev_txs:-n}
+
+if [[ $dev_txs == "y" ]]; then
+  dev_txs_flag=""
+else
+  dev_txs_flag=" --no-dev-txs"
+fi
+
 # Regenerate the Prometheus scrape config so it targets exactly the validators
 # this devnet will start (one target per validator's metrics port, 9000 + index).
 #
@@ -163,7 +174,7 @@ for validator_index in "${validator_indices[@]}"; do
   fi
 
   # Send the command to start the validator to the new window and capture output to the log file
-  tmux send-keys -t "devnet:$window_index" "${binary_path}snarkos start --dev-num-clients $total_clients --nodisplay --network $network_id --dev $validator_index --dev-num-validators $total_validators --validator --logfile $log_file --verbosity $verbosity --metrics --metrics-ip=0.0.0.0:$metrics_port --no-dev-txs" C-m
+  tmux send-keys -t "devnet:$window_index" "${binary_path}snarkos start --dev-num-clients $total_clients --nodisplay --network $network_id --dev $validator_index --dev-num-validators $total_validators --validator --logfile $log_file --verbosity $verbosity --metrics --metrics-ip=0.0.0.0:$metrics_port$dev_txs_flag" C-m
 done
 
 if [ "$total_clients" -ne 0 ]; then
