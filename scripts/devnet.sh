@@ -5,9 +5,46 @@ if [[ -n "$TMUX" ]]; then
   exit 1
 fi
 
+# Resolve the repo root from this script's own location, so the script works
+# regardless of the caller's current working directory.
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
 # Read the total number of validators from the user or use a default value of 4
 read -r -p "Enter the total number of validators (default: 4): " total_validators
 total_validators=${total_validators:-4}
+
+# Regenerate the Prometheus scrape config so it targets exactly the validators
+# this devnet will start (one target per validator's metrics port, 9000 + index).
+prometheus_yml="$repo_root/node/metrics/prometheus.yml"
+{
+  echo "global:"
+  echo "  scrape_interval: 15s"
+  echo "  scrape_timeout: 10s"
+  echo "  evaluation_interval: 1m"
+  echo "scrape_configs:"
+  echo "- job_name: prometheus"
+  echo "  honor_timestamps: true"
+  echo "  scrape_interval: 15s"
+  echo "  scrape_timeout: 10s"
+  echo "  metrics_path: /metrics"
+  echo "  scheme: http"
+  echo "  follow_redirects: true"
+  echo "  static_configs:"
+  echo "  - targets:"
+  echo "    - localhost:9090"
+  echo "- job_name: snarkos"
+  echo "  honor_timestamps: true"
+  echo "  scrape_interval: 15s"
+  echo "  scrape_timeout: 10s"
+  echo "  metrics_path: /metrics"
+  echo "  scheme: http"
+  echo "  follow_redirects: true"
+  echo "  static_configs:"
+  echo "  - targets:"
+  for ((validator_index = 0; validator_index < total_validators; validator_index++)); do
+    echo "    - host.docker.internal:$((9000 + validator_index))"
+  done
+} >"$prometheus_yml"
 
 # Read the total number of clients from the user or use a default value of 2
 read -r -p "Enter the total number of clients (default: 2): " total_clients
@@ -22,8 +59,8 @@ read -r -p "Do you want to run 'cargo install --locked --path .' to build the bi
 build_binary=${build_binary:-y}
 
 # Ask the user whether to clear the existing ledger history
-read -r -p "Do you want to clear the existing ledger history? (y/n, default: n): " clear_ledger
-clear_ledger=${clear_ledger:-n}
+read -r -p "Do you want to clear the existing ledger history? (y/n, default: y): " clear_ledger
+clear_ledger=${clear_ledger:-y}
 
 # Log verbosity is set to 1 (DEBUG) by default.
 verbosity=1
@@ -34,10 +71,10 @@ binary_path=""
 if [[ $build_binary == "y" ]]; then
   # Ask the user for additional crate features (comma-separated)
   read -r -p "Enter crate features to enable (comma separated, default: test_network): " crate_features
-  crate_features=${crate_features:-devnet}
+  crate_features=${crate_features:-test_network}
 
   # Build command
-  build_cmd="cargo install --locked --path ."
+  build_cmd="cargo install --locked --path $repo_root"
 
   # Add any extra features if provided
   if [[ -n $crate_features ]]; then
