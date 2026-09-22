@@ -62,14 +62,10 @@ committed `prometheus.yml` is whatever `devnet.sh` last generated; edit its
 `public_ip`, `snarkos_role` and `snarkos_network` labels on each target, since the
 dashboard queries select on them.
 
-#### Manual import (fallback)
+#### Importing into a different Grafana
 
-If you'd rather configure Grafana by hand, or need to import the dashboard into a
-different Grafana instance, `node/metrics/snarkOS-grafana.json` is still the
-importable, manual-import version (it prompts you to pick a datasource on import,
-rather than assuming the provisioned one):
-
-1. In Grafana, go to `Connections` → `Data sources` → `Add data source` → `Prometheus`,
-   set the URL to `http://prometheus:9090`, and `Save & test`.
-2. Go to `Dashboards` → `New` → `Import`, drag in `node/metrics/snarkOS-grafana.json`,
-   pick the datasource you just added, and `Import`.
+The provisioned dashboard hardcodes the datasource uid `prometheus`, which only resolves
+against the datasource this stack provisions. To take the dashboard elsewhere, open it
+here and export it with Grafana's "export for use in another instance" option: that
+rewrites the datasource into an `__inputs` placeholder, so the target Grafana prompts you
+to pick one on import.
