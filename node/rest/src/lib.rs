@@ -56,7 +56,7 @@ use lru::LruCache;
 use parking_lot::Mutex;
 use std::{net::SocketAddr, num::NonZeroUsize, sync::Arc, time::Duration};
 use tokio::{net::TcpListener, sync::Semaphore, task::JoinHandle};
-use tower_governor::{GovernorLayer, governor::GovernorConfigBuilder};
+use tower_governor::{GovernorError, GovernorLayer, governor::GovernorConfigBuilder};
 use tower_http::{
     cors::{Any, CorsLayer},
     trace::TraceLayer,
@@ -159,12 +159,18 @@ impl<N: Network, C: ConsensusStorage<N>, R: Routing<N>> Rest<N, C, R> {
                 .per_nanosecond((1_000_000_000 / rest_rps) as u64)
                 .burst_size(rest_rps)
                 .error_handler(|error| {
-                    // Properly return a 429 Too Many Requests error
-                    let error_message = error.to_string();
-                    let mut response = Response::new(error_message.clone().into());
-                    *response.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
-                    if error_message.contains("Too Many Requests") {
-                        *response.status_mut() = StatusCode::TOO_MANY_REQUESTS;
+                    // Properly return a 429 Too Many Requests error.
+                    // Match on the variant rather than the message, which is upstream's to reword,
+                    // and keep the `retry-after` headers the rate limiter has already computed.
+                    let mut response = Response::new(error.to_string().into());
+                    match error {
+                        GovernorError::TooManyRequests { headers, .. } => {
+                            *response.status_mut() = StatusCode::TOO_MANY_REQUESTS;
+                            if let Some(headers) = headers {
+                                *response.headers_mut() = headers;
+                            }
+                        }
+                        _ => *response.status_mut() = StatusCode::INTERNAL_SERVER_ERROR,
                     }
                     response
                 })
@@ -782,6 +788,28 @@ mod route_tests {
         let (status, body) = send(&router, "/v2/mainnet/block/height/latest").await;
         assert_eq!(status, StatusCode::TOO_MANY_REQUESTS);
         assert!(body.contains("Too Many Requests"), "unexpected rate limit body: {body}");
+    }
+
+    #[tokio::test]
+    async fn rate_limiting_sets_retry_after_on_v2() {
+        let rest = sample_rest().await;
+        // A burst of one, so the second request through this router is over the limit.
+        let router = rest.build_versioned_router(1);
+
+        let (status, _) = send(&router, "/v2/mainnet/block/height/latest").await;
+        assert_eq!(status, StatusCode::OK, "the first request should be within the limit");
+
+        // `send` drops the headers, and the headers are the point here, so issue this one directly.
+        let mut request = Request::builder().uri("/v2/mainnet/block/height/latest").body(Body::empty()).unwrap();
+        request.extensions_mut().insert(ConnectInfo(SocketAddr::from(([127, 0, 0, 1], 4130))));
+        let response = router.clone().oneshot(request).await.unwrap();
+        assert_eq!(response.status(), StatusCode::TOO_MANY_REQUESTS);
+
+        // The wait the rate limiter computed has to reach the client as a header, not only as prose
+        // in the body: a client cannot be expected to parse an English sentence to find it.
+        let retry_after = response.headers().get("retry-after").expect("the 429 carried no retry-after header");
+        let seconds = retry_after.to_str().expect("retry-after was not valid ASCII");
+        assert!(seconds.parse::<u64>().is_ok(), "retry-after was not a number of seconds: {seconds:?}");
     }
 
     #[tokio::test]
