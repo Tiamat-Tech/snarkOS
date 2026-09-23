@@ -237,9 +237,6 @@ impl<N: Network> Storage<N> {
         // Update the storage to the next round.
         self.update_current_round(next_round);
 
-        #[cfg(feature = "metrics")]
-        metrics::gauge(metrics::bft::LAST_STORED_ROUND, next_round as f64);
-
         // Retrieve the storage round.
         let storage_round = self.current_round();
         // Retrieve the GC round.
@@ -257,6 +254,9 @@ impl<N: Network> Storage<N> {
             next_round >= gc_round,
             "The next round {next_round} is behind the current GC round {gc_round}, likely because a concurrent sync advanced past it"
         );
+
+        #[cfg(feature = "metrics")]
+        metrics::gauge(metrics::bft::LAST_STORED_ROUND, storage_round as f64);
 
         // Storage may already be ahead of `next_round` if a concurrent sync-applied round update
         // landed in between; return the true storage round rather than the stale `next_round`.
