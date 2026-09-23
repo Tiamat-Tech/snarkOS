@@ -289,6 +289,14 @@ impl<N: Network> Storage<N> {
         self.rounds.read().get(&round).is_some_and(|set| set.iter().any(|(_, a)| a == &author))
     }
 
+    /// Returns `true` if the round index lists the certificate with the given ID and author.
+    ///
+    /// Unlike [`Self::contains_certificate`], this is already `true` while a concurrent
+    /// `insert_certificate_atomic` for that certificate is still in progress.
+    pub fn contains_certificate_in_round(&self, round: u64, certificate_id: Field<N>, author: Address<N>) -> bool {
+        self.rounds.read().get(&round).is_some_and(|set| set.contains(&(certificate_id, author)))
+    }
+
     /// Returns `true` if the storage contains the specified `certificate ID`.
     pub fn contains_unprocessed_certificate(&self, certificate_id: Field<N>) -> bool {
         // Check if the certificate ID exists in storage.
@@ -1131,10 +1139,21 @@ pub(crate) mod tests {
         // Construct the sample 'transmissions'.
         let (missing_transmissions, transmissions) = sample_transmissions(&certificate, rng);
 
+        // Ensure the certificate is not listed for its round yet.
+        assert!(!storage.contains_certificate_in_round(round, certificate_id, author));
+
         // Insert the certificate.
         storage.insert_certificate_atomic(certificate.clone(), Default::default(), missing_transmissions);
         // Ensure the certificate exists in storage.
         assert!(storage.contains_certificate(certificate_id));
+        // Ensure the certificate is listed for its round and author, but not for other rounds or IDs.
+        assert!(storage.contains_certificate_in_round(round, certificate_id, author));
+        assert!(!storage.contains_certificate_in_round(round + 1, certificate_id, author));
+        assert!(!storage.contains_certificate_in_round(
+            round,
+            <Field<CurrentNetwork> as snarkvm::prelude::Uniform>::rand(rng),
+            author
+        ));
         // Ensure the certificate is stored in the correct round.
         assert_eq!(storage.get_certificates_for_round(round), indexset! { certificate.clone() });
         // Ensure the certificate is stored for the correct round and author.
@@ -1161,6 +1180,8 @@ pub(crate) mod tests {
         assert!(storage.remove_certificate(certificate_id));
         // Ensure the certificate does not exist in storage.
         assert!(!storage.contains_certificate(certificate_id));
+        // Ensure the certificate is no longer listed for its round.
+        assert!(!storage.contains_certificate_in_round(round, certificate_id, author));
         // Ensure the certificate is no longer stored in the round.
         assert!(storage.get_certificates_for_round(round).is_empty());
         // Ensure the certificate is no longer stored for the round and author.

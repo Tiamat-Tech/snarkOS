@@ -1898,7 +1898,23 @@ impl<N: Network> Primary<N> {
         if !self.storage.contains_certificate(certificate.id()) {
             // Store the batch certificate.
             let (storage, certificate_) = (self.storage.clone(), certificate.clone());
-            spawn_blocking!(storage.insert_certificate(certificate_, missing_transmissions, Default::default()))?;
+            if let Err(err) =
+                spawn_blocking!(storage.insert_certificate(certificate_, missing_transmissions, Default::default()))
+            {
+                // The same certificate can reach this point from several tasks at once (e.g. a primary
+                // ping, a certified batch, and previous-certificate fetches of other batches). The task
+                // that stored it first also forwards it to the BFT, so the others have nothing left to do.
+                let (certificate_id, author) = (certificate.id(), certificate.author());
+                if self.storage.contains_certificate_in_round(batch_round, certificate_id, author) {
+                    trace!(
+                        "Batch certificate '{}' for round {batch_round} from '{peer_ip}' was stored concurrently",
+                        fmt_id(certificate_id)
+                    );
+                    return Ok(());
+                } else {
+                    return Err(err);
+                }
+            }
             debug!("Stored a batch certificate for round {batch_round} from '{peer_ip}'");
             // If a BFT sender was provided, send the round and certificate to the BFT.
             if let Some(cb) = self.primary_callback.get() {
@@ -3561,6 +3577,45 @@ mod tests {
         for aborted_transmission_id in aborted_transmissions {
             assert!(primary.storage.contains_aborted_transmission(aborted_transmission_id));
             assert!(primary.storage.get_transmission(aborted_transmission_id).is_none());
+        }
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_sync_with_same_certificate_concurrently() {
+        let round = 3;
+        let mut rng = TestRng::default();
+        let (primary, accounts) = primary_without_handlers(&mut rng);
+        let peer_ip = accounts[1].0;
+
+        // Fill primary storage.
+        let previous_certificate_ids = store_certificate_chain(&primary, &accounts, round, &mut rng);
+
+        for (_, account) in accounts.iter() {
+            let (certificate, transmissions) = create_batch_certificate(
+                account.address(),
+                &accounts,
+                round,
+                previous_certificate_ids.clone(),
+                &mut rng,
+            );
+            let certificate_id = certificate.id();
+            for (transmission_id, transmission) in transmissions {
+                primary.workers()[0].process_transmission_from_peer(peer_ip, transmission_id, transmission);
+            }
+
+            // Every concurrent attempt to store the same certificate must succeed.
+            let tasks: Vec<_> = (0..8)
+                .map(|_| {
+                    let (primary, certificate) = (primary.clone(), certificate.clone());
+                    tokio::spawn(
+                        async move { primary.sync_with_certificate_from_peer::<true>(peer_ip, certificate).await },
+                    )
+                })
+                .collect();
+            for task in tasks {
+                task.await.unwrap().unwrap();
+            }
+            assert!(primary.storage.contains_certificate(certificate_id));
         }
     }
 
