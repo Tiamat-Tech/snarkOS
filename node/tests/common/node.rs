@@ -30,6 +30,7 @@ pub async fn client() -> Client<CurrentNetwork, ConsensusMemory<CurrentNetwork>>
         None,
         10,
         RestVerificationLimits::max::<CurrentNetwork, ConsensusMemory<CurrentNetwork>>(),
+        None, // No history compatibility mode.
         Account::<CurrentNetwork>::from_str("APrivateKey1zkp2oVPTci9kKcUprnbzMwq95Di1MQERpYBhEeqvkrDirK1").unwrap(),
         &[],
         sample_genesis_block(),
@@ -38,7 +39,6 @@ pub async fn client() -> Client<CurrentNetwork, ConsensusMemory<CurrentNetwork>>
         NodeDataDir::new_test(None),
         false, // Connect to untrusted peers.
         None,
-        &[], // No Slipstream plugins.
         SignalHandler::new(None),
     )
     .await
@@ -67,6 +67,7 @@ pub async fn validator() -> Validator<CurrentNetwork, ConsensusMemory<CurrentNet
         None,
         10,
         RestVerificationLimits::max::<CurrentNetwork, ConsensusMemory<CurrentNetwork>>(),
+        None, // No history compatibility mode.
         Account::<CurrentNetwork>::from_str("APrivateKey1zkp2oVPTci9kKcUprnbzMwq95Di1MQERpYBhEeqvkrDirK1").unwrap(),
         &[],
         &[],
@@ -77,7 +78,6 @@ pub async fn validator() -> Validator<CurrentNetwork, ConsensusMemory<CurrentNet
         false, // This test requires validators to connect to peers.
         false, // No dev traffic in production mode.
         None,
-        &[],  // No Slipstream plugins.
         None, // No dev committee hotswap in production mode.
         SignalHandler::new(None),
     )

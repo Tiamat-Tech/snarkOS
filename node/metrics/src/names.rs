@@ -16,7 +16,7 @@
 pub(super) const COUNTER_NAMES: [&str; 3] =
     [bft::LEADERS_ELECTED, consensus::STALE_UNCONFIRMED_TRANSACTIONS, consensus::STALE_UNCONFIRMED_SOLUTIONS];
 
-pub(super) const GAUGE_NAMES: [&str; 28] = [
+pub(super) const GAUGE_NAMES: [&str; 29] = [
     bft::CONNECTED,
     bft::CONNECTED_STAKE,
     bft::CONNECTED_STAKE_WITH_MATCHING_SHA,
@@ -41,6 +41,7 @@ pub(super) const GAUGE_NAMES: [&str; 28] = [
     consensus::COMMITTED_CERTIFICATES,
     consensus::UNCONFIRMED_SOLUTIONS,
     consensus::UNCONFIRMED_TRANSACTIONS,
+    consensus::VERSION,
     router::CONNECTED,
     router::CANDIDATE,
     router::RESTRICTED,
@@ -116,6 +117,8 @@ pub mod consensus {
     pub const ADVANCE_TO_NEXT_BLOCK_SECS: &str = "snarkos_consensus_advance_to_next_block_secs";
     pub const UNCONFIRMED_TRANSACTIONS: &str = "snarkos_consensus_unconfirmed_transactions_total";
     pub const UNCONFIRMED_SOLUTIONS: &str = "snarkos_consensus_unconfirmed_solutions_total";
+    /// The active `ConsensusVersion` at the current block height.
+    pub const VERSION: &str = "snarkos_consensus_version";
     pub const TRANSMISSION_LATENCY: &str = "snarkos_consensus_transmission_latency";
     pub const STALE_UNCONFIRMED_TRANSACTIONS: &str = "snarkos_consensus_stale_unconfirmed_transactions";
     pub const STALE_UNCONFIRMED_SOLUTIONS: &str = "snarkos_consensus_stale_unconfirmed_solutions";
