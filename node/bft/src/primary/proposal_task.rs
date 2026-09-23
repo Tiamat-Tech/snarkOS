@@ -157,6 +157,7 @@ impl<N: Network> ProposalTask<N> {
     async fn propose<P: BatchPropose>(primary: &P, round: u64) -> bool {
         let mut attempt = 1u32;
         let mut backoff = CREATE_BATCH_INTERVAL;
+
         loop {
             // The round advances both when this primary certifies a batch and when block sync
             // applies a block (`Storage::sync_round_with_block`), so this doubles as the local
@@ -173,11 +174,14 @@ impl<N: Network> ProposalTask<N> {
                 // the committee lookback from the ledger.
                 sleep(backoff).await;
                 backoff = (backoff.saturating_mul(2)).min(MAX_BATCH_DELAY);
-                debug!("Retrying batch proposal for round {round} (attempt #{attempt})");
+                if primary.current_round() != round {
+                    return false;
+                }
             }
 
             // Note: Do NOT spawn a task around this function call.  Proposing a batch is a
             // critical path, and only one batch needs to be proposed at a time.
+            debug!("Trying batch proposal for round {round} (attempt #{attempt})");
             match primary.propose_batch().await {
                 Ok(true) => return true, // batch submitted; proceed to Stage 3
                 Ok(false) => {}          // not ready yet; retry
