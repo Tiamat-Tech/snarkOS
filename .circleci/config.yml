@@ -111,7 +111,7 @@ commands:
             CARGO_PROFILE_RELEASE_CODEGEN_UNITS=16 \
             CARGO_PROFILE_RELEASE_OPT_LEVEL=2 \
             CARGO_PROFILE_RELEASE_DEBUG=0 \
-            cargo install --locked --path . --features test_network,history
+            cargo install --locked --path . --features test_network
 
   setup_environment:
     description: "Setup testing environment"
@@ -849,7 +849,7 @@ workflows:
           filters:
             branches:
               only:
-                - fix/codec-roundtrip-and-audit
+                - main_net_v4101
                 - canary
                 - testnet
                 - mainnet
@@ -859,7 +859,7 @@ workflows:
           filters:
             branches:
               only:
-                - fix/codec-roundtrip-and-audit
+                - main_net_v4101
                 - canary
                 - testnet
                 - mainnet
@@ -869,7 +869,7 @@ workflows:
           filters:
             branches:
               only:
-                - fix/codec-roundtrip-and-audit
+                - main_net_v4101
                 - canary
                 - testnet
                 - mainnet
@@ -878,7 +878,7 @@ workflows:
           filters:
             branches:
               only:
-                - fix/codec-roundtrip-and-audit
+                - main_net_v4101
                 - canary
                 - testnet
                 - mainnet
@@ -897,7 +897,7 @@ workflows:
           filters:
             branches:
               only:
-                - fix/codec-roundtrip-and-audit
+                - main_net_v4101
                 - canary
                 - testnet
                 - mainnet
