@@ -513,7 +513,7 @@ impl<N: Network> proposal_task::BatchPropose for Primary<N> {
                         // Resend the batch proposal to the validator for signing.
                         Some(peer_ip) => {
                             let (gateway, event_, round) = (self.gateway.clone(), event.clone(), proposal.round());
-                            tokio::spawn(async move {
+                            self.spawn(async move {
                                 debug!("Resending batch proposal for round {round} to peer '{peer_ip}'");
                                 // Resend the batch proposal to the peer.
                                 if gateway.send(peer_ip, event_).await.is_none() {
@@ -899,7 +899,7 @@ impl<N: Network> Primary<N> {
             // Instead, rebroadcast the cached signature to the peer.
             if signed_round == batch_header.round() && signed_batch_id == batch_header.batch_id() {
                 let gateway = self.gateway.clone();
-                tokio::spawn(async move {
+                self.spawn(async move {
                     debug!("Resending a signature for a batch in round {batch_round} from '{peer_ip}'");
                     let event = Event::BatchSignature(BatchSignature::new(batch_header.batch_id(), signature));
                     // Resend the batch signature to the peer.
@@ -996,7 +996,7 @@ impl<N: Network> Primary<N> {
 
         // Broadcast the signature back to the validator.
         let self_ = self.clone();
-        tokio::spawn(async move {
+        self.spawn(async move {
             let event = Event::BatchSignature(BatchSignature::new(batch_id, signature));
             // Send the batch signature to the peer.
             if self_.gateway.send(peer_ip, event).await.is_some() {
@@ -1397,8 +1397,8 @@ impl<N: Network> Primary<N> {
 
                 // Spawn a task to process the primary certificate.
                 {
-                    let self_ = self_.clone();
-                    tokio::spawn(async move {
+                    let self__ = self_.clone();
+                    self_.spawn(async move {
                         // Deserialize the primary certificate in the primary ping.
                         let Ok(primary_certificate) = spawn_blocking!(primary_certificate.deserialize_blocking())
                         else {
@@ -1408,7 +1408,7 @@ impl<N: Network> Primary<N> {
                         // Process the primary certificate.
                         let id = fmt_id(primary_certificate.id());
                         let round = primary_certificate.round();
-                        if let Err(e) = self_.process_batch_certificate_from_peer(peer_ip, primary_certificate).await {
+                        if let Err(e) = self__.process_batch_certificate_from_peer(peer_ip, primary_certificate).await {
                             debug!("Cannot process a primary certificate '{id}' at round {round} in a 'PrimaryPing' from '{peer_ip}' - {e}");
                         }
                     });
@@ -1439,11 +1439,11 @@ impl<N: Network> Primary<N> {
         self.spawn(async move {
             while let Some((peer_ip, batch_propose)) = rx_batch_propose.recv().await {
                 // Spawn a task to process the proposed batch.
-                let self_ = self_.clone();
-                tokio::spawn(async move {
+                let self__ = self_.clone();
+                self_.spawn(async move {
                     // Process the batch proposal.
                     let round = batch_propose.round;
-                    if let Err(err) = self_.process_batch_propose_from_peer(peer_ip, batch_propose).await {
+                    if let Err(err) = self__.process_batch_propose_from_peer(peer_ip, batch_propose).await {
                         let err = err.context(format!("Cannot sign a batch at round {round} from '{peer_ip}'"));
                         warn!("{}", flatten_error(err));
                     }
@@ -1473,8 +1473,8 @@ impl<N: Network> Primary<N> {
         self.spawn(async move {
             while let Some((peer_ip, batch_certificate)) = rx_batch_certified.recv().await {
                 // Spawn a task to process the batch certificate.
-                let self_ = self_.clone();
-                tokio::spawn(async move {
+                let self__ = self_.clone();
+                self_.spawn(async move {
                     // Deserialize the batch certificate.
                     let Ok(batch_certificate) = spawn_blocking!(batch_certificate.deserialize_blocking()) else {
                         warn!("Failed to deserialize the batch certificate from '{peer_ip}'");
@@ -1483,7 +1483,7 @@ impl<N: Network> Primary<N> {
                     // Process the batch certificate.
                     let id = fmt_id(batch_certificate.id());
                     let round = batch_certificate.round();
-                    if let Err(err) = self_.process_batch_certificate_from_peer(peer_ip, batch_certificate).await {
+                    if let Err(err) = self__.process_batch_certificate_from_peer(peer_ip, batch_certificate).await {
                         warn!(
                             "{}",
                             flatten_error(err.context(format!(
@@ -1558,10 +1558,10 @@ impl<N: Network> Primary<N> {
                     error!("Unable to determine the worker ID for the unconfirmed solution");
                     continue;
                 };
-                let self_ = self_.clone();
-                tokio::spawn(async move {
+                let self__ = self_.clone();
+                self_.spawn(async move {
                     // Retrieve the worker.
-                    let worker = &self_.workers()[worker_id as usize];
+                    let worker = &self__.workers()[worker_id as usize];
                     // Process the unconfirmed solution.
                     let result = worker.process_unconfirmed_solution(solution_id, solution).await;
                     // Send the result to the callback.
@@ -1585,10 +1585,10 @@ impl<N: Network> Primary<N> {
                     error!("Unable to determine the worker ID for the unconfirmed transaction");
                     continue;
                 };
-                let self_ = self_.clone();
-                tokio::spawn(async move {
+                let self__ = self_.clone();
+                self_.spawn(async move {
                     // Retrieve the worker.
-                    let worker = &self_.workers().get(worker_id as usize).expect("Invalid worker ID");
+                    let worker = &self__.workers().get(worker_id as usize).expect("Invalid worker ID");
                     // Process the unconfirmed transaction.
                     let result = worker.process_unconfirmed_transaction(transaction_id, transaction).await;
                     // Send the result to the callback.
