@@ -280,23 +280,20 @@ impl<N: Network> Storage<N> {
     }
 
     /// Update the storage by performing garbage collection based on the next round.
+    ///
+    /// This is called concurrently from two independent paths: the BFT commit path
+    /// (`commit_leader_certificate`) and the sync-bootup path (`sync_storage_with_ledger_at_bootup`).
+    /// `fetch_max` ensures `gc_round` only ever advances, regardless of interleaving, instead of a
+    /// compare-exchange erroring out when a stale/losing caller observes a smaller target round.
     pub(crate) fn garbage_collect_certificates(&self, next_round: u64) -> Result<()> {
-        // Fetch the current GC round.
-        let current_gc_round = self.gc_round();
         // Compute the next GC round.
         let next_gc_round = next_round.saturating_sub(self.max_gc_rounds);
-        // Check if storage needs to be garbage collected.
-        if next_gc_round > current_gc_round {
-            if self
-                .gc_round
-                .compare_exchange(current_gc_round, next_gc_round, Ordering::SeqCst, Ordering::SeqCst)
-                .is_err()
-            {
-                bail!("Concurrent updates to GC round detected.");
-            }
-
+        // Advance the GC round, recording the previous value.
+        let previous_gc_round = self.gc_round.fetch_max(next_gc_round, Ordering::SeqCst);
+        // Only the call that actually advanced the GC round performs the removal sweep.
+        if next_gc_round > previous_gc_round {
             // Remove the GC round(s) from storage.
-            for gc_round in current_gc_round..=next_gc_round {
+            for gc_round in previous_gc_round..=next_gc_round {
                 // Iterate over the certificates for the GC round.
                 for id in self.get_certificate_ids_for_round(gc_round).into_iter() {
                     trace!(
@@ -305,10 +302,6 @@ impl<N: Network> Storage<N> {
                     self.remove_certificate(id);
                 }
             }
-            // Update the GC round.
-            self.gc_round.store(next_gc_round, Ordering::SeqCst);
-        } else if next_gc_round < current_gc_round {
-            bail!("Attempted to decrease GC round from {current_gc_round} to {next_gc_round}");
         }
 
         Ok(())
@@ -1867,6 +1860,67 @@ pub(crate) mod tests {
         // The final values must converge to the max of what each writer ever proposed.
         assert_eq!(storage.current_round(), start_round + ITERATIONS);
         assert_eq!(storage.current_height(), start_height.max(ITERATIONS as u32 - 1));
+    }
+
+    #[test]
+    fn test_concurrent_gc_round_updates_never_regress() {
+        let rng = &mut TestRng::default();
+
+        // Sample a committee.
+        let committee = snarkvm::ledger::committee::test_helpers::sample_committee(rng);
+        // Initialize the ledger.
+        let ledger = Arc::new(MockLedgerService::new(committee));
+        // Initialize the storage with a small GC window so the GC round actually advances
+        // as rounds are garbage collected.
+        let storage = Storage::<CurrentNetwork>::new(ledger, Arc::new(BFTMemoryService::new()), 10).unwrap();
+
+        let start_round = storage.current_round();
+        const ITERATIONS: u64 = 2_000;
+
+        let barrier = Arc::new(std::sync::Barrier::new(3));
+
+        // Thread A mimics the BFT commit path, garbage collecting an increasing sequence of rounds.
+        let storage_a = storage.clone();
+        let barrier_a = barrier.clone();
+        let commit_handle = std::thread::spawn(move || {
+            for round in start_round..start_round + ITERATIONS {
+                barrier_a.wait();
+                storage_a.garbage_collect_certificates(round).expect("garbage_collect_certificates should not fail");
+            }
+        });
+
+        // Thread B mimics the sync-bootup path racing against it with an out-of-order sequence.
+        let storage_b = storage.clone();
+        let barrier_b = barrier.clone();
+        let sync_handle = std::thread::spawn(move || {
+            for i in (0..ITERATIONS).rev() {
+                barrier_b.wait();
+                storage_b
+                    .garbage_collect_certificates(start_round + i)
+                    .expect("garbage_collect_certificates should not fail");
+            }
+        });
+
+        // Thread C repeatedly samples the GC round and asserts it never goes backwards.
+        let storage_c = storage.clone();
+        let barrier_c = barrier.clone();
+        let observer_handle = std::thread::spawn(move || {
+            let mut last_gc_round = storage_c.gc_round();
+            for _ in 0..ITERATIONS {
+                barrier_c.wait();
+                let gc_round = storage_c.gc_round();
+                assert!(gc_round >= last_gc_round, "gc_round regressed: {gc_round} < {last_gc_round}");
+                last_gc_round = gc_round;
+            }
+        });
+
+        commit_handle.join().unwrap();
+        sync_handle.join().unwrap();
+        observer_handle.join().unwrap();
+
+        // The final value must converge to the max of what each writer ever proposed.
+        let max_round_proposed = start_round + ITERATIONS - 1;
+        assert_eq!(storage.gc_round(), max_round_proposed.saturating_sub(storage.max_gc_rounds()));
     }
 }
 
