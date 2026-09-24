@@ -1799,7 +1799,10 @@ impl<N: Network> Primary<N> {
 
         // Store the certified batch.
         let (storage, certificate_) = (self.storage.clone(), certificate.clone());
-        spawn_blocking!(storage.insert_certificate(certificate_, transmissions, Default::default()))?;
+        tokio::task::spawn_blocking(move || {
+            storage.insert_certificate(certificate_, transmissions, Default::default())
+        })
+        .await??;
         debug!("Stored a batch certificate for round {}", certificate.round());
         // The batch is now in storage, so late-arriving signatures can find it via contains_batch.
         // Transition from Certified back to None.
@@ -1894,19 +1897,33 @@ impl<N: Network> Primary<N> {
         let missing_transmissions =
             self.sync_with_batch_header_from_peer::<IS_SYNCING, false>(peer_ip, batch_header).await?;
 
-        // Check if the certificate needs to be stored.
-        if !self.storage.contains_certificate(certificate.id()) {
-            // Store the batch certificate.
-            let (storage, certificate_) = (self.storage.clone(), certificate.clone());
-            spawn_blocking!(storage.insert_certificate(certificate_, missing_transmissions, Default::default()))?;
-            debug!("Stored a batch certificate for round {batch_round} from '{peer_ip}'");
-            // If a BFT sender was provided, send the round and certificate to the BFT.
-            if let Some(cb) = self.primary_callback.get() {
-                cb.add_new_certificate(certificate).await.with_context(|| "Failed to update the DAG from sync")?;
+        // Store the batch certificate. The same certificate can reach this point from several
+        // tasks at once (e.g. a primary ping, a certified batch, and previous-certificate
+        // fetches of other batches); the loser of that race gets a benign error here and has
+        // nothing left to do, since the winning task already forwards it to the BFT.
+        let (storage, certificate_) = (self.storage.clone(), certificate.clone());
+        match tokio::task::spawn_blocking(move || {
+            storage.insert_certificate(certificate_, missing_transmissions, Default::default())
+        })
+        .await
+        {
+            Ok(Ok(_)) => {} // continue
+            Ok(Err(err)) if err.is_benign() => {
+                trace!("Skipping insertion for certificate '{}' - {err}", fmt_id(certificate.id()));
+                return Ok(());
             }
-            // Wake the round-increment task to re-check quorum.
-            self.round_increment_notify.notify_one();
+            Ok(Err(err)) => return Err(anyhow!("{err}")),
+            Err(err) => return Err(anyhow!("[tokio::spawn_blocking] {err}")),
         }
+
+        debug!("Stored a batch certificate for round {batch_round} from '{peer_ip}'");
+        // If a BFT sender was provided, send the round and certificate to the BFT.
+        if let Some(cb) = self.primary_callback.get() {
+            cb.add_new_certificate(certificate).await.with_context(|| "Failed to update the DAG from sync")?;
+        }
+        // Wake the round-increment task to re-check quorum.
+        self.round_increment_notify.notify_one();
+
         Ok(())
     }
 
@@ -3561,6 +3578,45 @@ mod tests {
         for aborted_transmission_id in aborted_transmissions {
             assert!(primary.storage.contains_aborted_transmission(aborted_transmission_id));
             assert!(primary.storage.get_transmission(aborted_transmission_id).is_none());
+        }
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_sync_with_same_certificate_concurrently() {
+        let round = 3;
+        let mut rng = TestRng::default();
+        let (primary, accounts) = primary_without_handlers(&mut rng);
+        let peer_ip = accounts[1].0;
+
+        // Fill primary storage.
+        let previous_certificate_ids = store_certificate_chain(&primary, &accounts, round, &mut rng);
+
+        for (_, account) in accounts.iter() {
+            let (certificate, transmissions) = create_batch_certificate(
+                account.address(),
+                &accounts,
+                round,
+                previous_certificate_ids.clone(),
+                &mut rng,
+            );
+            let certificate_id = certificate.id();
+            for (transmission_id, transmission) in transmissions {
+                primary.workers()[0].process_transmission_from_peer(peer_ip, transmission_id, transmission);
+            }
+
+            // Every concurrent attempt to store the same certificate must succeed.
+            let tasks: Vec<_> = (0..8)
+                .map(|_| {
+                    let (primary, certificate) = (primary.clone(), certificate.clone());
+                    tokio::spawn(
+                        async move { primary.sync_with_certificate_from_peer::<true>(peer_ip, certificate).await },
+                    )
+                })
+                .collect();
+            for task in tasks {
+                task.await.unwrap().unwrap();
+            }
+            assert!(primary.storage.contains_certificate(certificate_id));
         }
     }
 
