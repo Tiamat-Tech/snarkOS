@@ -141,7 +141,14 @@ features = [ "test-helpers" ]
 
 [dev-dependencies.snarkvm]
 workspace = true
-features = [ "test-helpers" ]
+features = [ "test-helpers", "test" ]
+
+[[bench]]
+name = "handlers"
+harness = false
+
+[dev-dependencies.criterion]
+workspace = true
 
 [build-dependencies.built]
 workspace = true
