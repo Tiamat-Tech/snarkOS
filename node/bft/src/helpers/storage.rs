@@ -43,6 +43,31 @@ use std::{
     },
 };
 
+/// Errors returned by [`Storage::check_certificate`] (and therefore [`Storage::insert_certificate`]).
+///
+/// The `SameCertificate` and `SameAuthorAndRound` variants describe benign races: concurrent sync
+/// paths regularly try to insert the same certificate, and the loser of that race should treat its
+/// failure as a no-op (the certificate is in fact present in storage) rather than a hard error.
+#[derive(Debug, thiserror::Error)]
+pub enum CheckCertificateError {
+    #[error("Certificate round {round} already exists in storage (gc_round = {gc_round})")]
+    SameCertificate { round: u64, gc_round: u64 },
+    #[error("Certificate with this author in round {round} is already in storage (gc_round = {gc_round})")]
+    SameAuthorAndRound { round: u64, gc_round: u64 },
+    #[error("Certificate round {round} is at or below the GC round {gc_round}")]
+    RoundTooLow { round: u64, gc_round: u64 },
+    #[error(transparent)]
+    Other(#[from] anyhow::Error),
+}
+
+impl CheckCertificateError {
+    /// Whether the error indicates the certificate is already in storage (a benign sync race
+    /// rather than a hard failure). Callers should not log benign errors at ERROR.
+    pub fn is_benign(&self) -> bool {
+        matches!(self, Self::SameCertificate { .. } | Self::SameAuthorAndRound { .. } | Self::RoundTooLow { .. })
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct Storage<N: Network>(Arc<StorageInner<N>>);
 
@@ -287,14 +312,6 @@ impl<N: Network> Storage<N> {
     /// Returns `true` if the storage contains a certificate from the specified `author` in the given `round`.
     pub fn contains_certificate_in_round_from(&self, round: u64, author: Address<N>) -> bool {
         self.rounds.read().get(&round).is_some_and(|set| set.iter().any(|(_, a)| a == &author))
-    }
-
-    /// Returns `true` if the round index lists the certificate with the given ID and author.
-    ///
-    /// Unlike [`Self::contains_certificate`], this is already `true` while a concurrent
-    /// `insert_certificate_atomic` for that certificate is still in progress.
-    pub fn contains_certificate_in_round(&self, round: u64, certificate_id: Field<N>, author: Address<N>) -> bool {
-        self.rounds.read().get(&round).is_some_and(|set| set.contains(&(certificate_id, author)))
     }
 
     /// Returns `true` if the storage contains the specified `certificate ID`.
@@ -633,12 +650,17 @@ impl<N: Network> Storage<N> {
     /// - The previous certificates reached the quorum threshold (N - f).
     /// - The timestamps from the signers are all within the allowed time range.
     /// - The signers have reached the quorum threshold (N - f).
+    ///
+    /// # Errors
+    /// Returns [`CheckCertificateError::SameCertificate`] or [`CheckCertificateError::SameAuthorAndRound`]
+    /// if the certificate (or one from the same author for the same round) is already in storage.
+    /// These are benign during concurrent sync; callers should not log them at ERROR.
     pub fn check_certificate(
         &self,
         certificate: &BatchCertificate<N>,
         transmissions: HashMap<TransmissionID<N>, Transmission<N>>,
         aborted_transmissions: HashSet<TransmissionID<N>>,
-    ) -> Result<HashMap<TransmissionID<N>, Transmission<N>>> {
+    ) -> Result<HashMap<TransmissionID<N>, Transmission<N>>, CheckCertificateError> {
         // Retrieve the round.
         let round = certificate.round();
         // Retrieve the GC round.
@@ -648,19 +670,19 @@ impl<N: Network> Storage<N> {
 
         // Ensure the certificate ID does not already exist in storage.
         if self.contains_certificate(certificate.id()) {
-            bail!("Certificate for round {round} already exists in storage {gc_log}")
+            return Err(CheckCertificateError::SameCertificate { round, gc_round });
         }
 
         // Ensure the storage does not already contain a certificate for this author in this round.
         if self.contains_certificate_in_round_from(round, certificate.author()) {
-            bail!("Certificate with this author for round {round} already exists in storage {gc_log}")
+            return Err(CheckCertificateError::SameAuthorAndRound { round, gc_round });
         }
 
         // Ensure the batch header is well-formed.
         let Some(missing_transmissions) =
             self.check_batch_header(certificate.batch_header(), transmissions, aborted_transmissions)?
         else {
-            bail!("Certificate for round {round} already exists in storage {gc_log}")
+            return Err(CheckCertificateError::SameCertificate { round, gc_round });
         };
 
         // Check the timestamp for liveness.
@@ -668,7 +690,7 @@ impl<N: Network> Storage<N> {
 
         // Retrieve the committee lookback for the batch round.
         let Ok(committee_lookback) = self.ledger.get_committee_lookback_for_round(round) else {
-            bail!("Storage failed to retrieve the committee for round {round} {gc_log}")
+            return Err(anyhow!("Storage failed to retrieve the committee for round {round} {gc_log}").into());
         };
 
         // Initialize a set of the signers.
@@ -680,7 +702,7 @@ impl<N: Network> Storage<N> {
         for signer in certificate.signers().iter().copied() {
             // Ensure the signer is in the committee.
             if !committee_lookback.is_committee_member(signer) {
-                bail!("Signer {signer} is not in the committee for round {round} {gc_log}")
+                return Err(anyhow!("Signer {signer} is not in the committee for round {round} {gc_log}").into());
             }
             // Append the signer.
             signers.insert(signer);
@@ -688,7 +710,9 @@ impl<N: Network> Storage<N> {
 
         // Ensure the signatures have reached the quorum threshold.
         if !committee_lookback.is_quorum_threshold_reached(&signers) {
-            bail!("Signatures for a batch in round {round} did not reach quorum threshold {gc_log}")
+            return Err(
+                anyhow!("Signatures for a batch in round {round} did not reach quorum threshold {gc_log}").into()
+            );
         }
 
         Ok(missing_transmissions)
@@ -716,9 +740,11 @@ impl<N: Network> Storage<N> {
         certificate: BatchCertificate<N>,
         transmissions: HashMap<TransmissionID<N>, Transmission<N>>,
         aborted_transmissions: HashSet<TransmissionID<N>>,
-    ) -> Result<()> {
+    ) -> Result<(), CheckCertificateError> {
         // Ensure the certificate round is above the GC round.
-        ensure!(certificate.round() > self.gc_round(), "Certificate round is at or below the GC round");
+        if certificate.round() <= self.gc_round() {
+            return Err(CheckCertificateError::RoundTooLow { round: certificate.round(), gc_round: self.gc_round() });
+        }
         // Ensure the certificate and its transmissions are valid.
         let missing_transmissions =
             self.check_certificate(&certificate, transmissions, aborted_transmissions.clone())?;
@@ -1139,21 +1165,10 @@ pub(crate) mod tests {
         // Construct the sample 'transmissions'.
         let (missing_transmissions, transmissions) = sample_transmissions(&certificate, rng);
 
-        // Ensure the certificate is not listed for its round yet.
-        assert!(!storage.contains_certificate_in_round(round, certificate_id, author));
-
         // Insert the certificate.
         storage.insert_certificate_atomic(certificate.clone(), Default::default(), missing_transmissions);
         // Ensure the certificate exists in storage.
         assert!(storage.contains_certificate(certificate_id));
-        // Ensure the certificate is listed for its round and author, but not for other rounds or IDs.
-        assert!(storage.contains_certificate_in_round(round, certificate_id, author));
-        assert!(!storage.contains_certificate_in_round(round + 1, certificate_id, author));
-        assert!(!storage.contains_certificate_in_round(
-            round,
-            <Field<CurrentNetwork> as snarkvm::prelude::Uniform>::rand(rng),
-            author
-        ));
         // Ensure the certificate is stored in the correct round.
         assert_eq!(storage.get_certificates_for_round(round), indexset! { certificate.clone() });
         // Ensure the certificate is stored for the correct round and author.
@@ -1180,8 +1195,6 @@ pub(crate) mod tests {
         assert!(storage.remove_certificate(certificate_id));
         // Ensure the certificate does not exist in storage.
         assert!(!storage.contains_certificate(certificate_id));
-        // Ensure the certificate is no longer listed for its round.
-        assert!(!storage.contains_certificate_in_round(round, certificate_id, author));
         // Ensure the certificate is no longer stored in the round.
         assert!(storage.get_certificates_for_round(round).is_empty());
         // Ensure the certificate is no longer stored for the round and author.
