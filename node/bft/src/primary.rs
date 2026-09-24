@@ -2088,7 +2088,9 @@ impl<N: Network> Primary<N> {
 impl<N: Network> Primary<N> {
     /// Spawns a task with the given future; it should only be used for long-running tasks.
     fn spawn<T: Future<Output = ()> + Send + 'static>(&self, future: T) {
-        self.handles.lock().push(tokio::spawn(future));
+        let mut handles = self.handles.lock();
+        handles.retain(|handle| !handle.is_finished());
+        handles.push(tokio::spawn(future));
     }
 
     /// Shuts down the primary.
@@ -3510,9 +3512,7 @@ mod tests {
             let tasks: Vec<_> = (0..8)
                 .map(|_| {
                     let (primary, certificate) = (primary.clone(), certificate.clone());
-                    tokio::spawn(
-                        async move { primary.sync_with_certificate_from_peer::<true>(peer_ip, certificate).await },
-                    )
+                    tokio::spawn(async move { primary.sync_with_certificate_from_peer(peer_ip, certificate).await })
                 })
                 .collect();
             for task in tasks {

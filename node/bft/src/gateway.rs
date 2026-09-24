@@ -990,7 +990,9 @@ impl<N: Network> Gateway<N> {
 
     /// Spawns a task with the given future; it should only be used for long-running tasks.
     fn spawn<T: Future<Output = ()> + Send + 'static>(&self, future: T) {
-        self.handles.lock().push(tokio::spawn(future));
+        let mut handles = self.handles.lock();
+        handles.retain(|handle| !handle.is_finished());
+        handles.push(tokio::spawn(future));
     }
 
     /// Shuts down the gateway.
