@@ -115,7 +115,7 @@ fn advance_empty_block(
 }
 
 fn build_chain_fixture(rng: &mut TestRng) -> ChainFixture {
-    let (ledger, private_key, records) = fresh_ledger(rng);
+    let (ledger, private_key, _records) = fresh_ledger(rng);
 
     // A transaction already in the ledger (the genesis credits mint), for `get_transaction`-style
     // benches -- there's no need to build a new one just to look it up.
@@ -129,8 +129,11 @@ fn build_chain_fixture(rng: &mut TestRng) -> ChainFixture {
     assert!(!genesis_commitments.is_empty(), "genesis must have commitments to benchmark against");
 
     // Deploy a small program, and advance it into the chain, so the program-lookup handlers have
-    // something real to find. This is the only place a genesis record gets spent "for real" --
-    // the other fixtures below build transactions that are checked but never applied.
+    // something real to find. Paid with a public fee (no fee record): genesis funds every
+    // validator's public balance too, and a private fee's change output would need to be a
+    // Version 1 record pre-Consensus V8, which only `vm`'s own `#[cfg(test)]` builds produce --
+    // not available to an external crate like this one without breaking the real-genesis-loading
+    // tests that share this crate's dev-dependency feature set (see `node/rest/Cargo.toml`).
     let program = Program::<CurrentNetwork>::from_str(
         r"
 program rest_bench_handlers.aleo;
@@ -145,7 +148,7 @@ function hello:
     .unwrap();
     let program_id = *program.id();
 
-    let deploy_tx = ledger.vm().deploy(&private_key, &program, Some(records[0].clone()), 600_000, None, rng).unwrap();
+    let deploy_tx = ledger.vm().deploy(&private_key, &program, None, 600_000, None, rng).unwrap();
     let block =
         ledger.prepare_advance_to_next_beacon_block(&private_key, vec![], vec![], vec![deploy_tx], rng).unwrap();
     ledger.advance_to_next_block(&block).unwrap();
@@ -303,15 +306,15 @@ fn bench_mapping_lookups(c: &mut Criterion) {
 /// execute transaction, mirroring what snarkVM's own `ledger/benches/transaction.rs` measures for
 /// `vm.check_transaction` -- `Ledger::check_transaction_basic` just forwards to it.
 ///
-/// Each transaction is built fresh, checked, but never applied to its ledger, so there's no
-/// shared-state concern between the two: a deploy transaction spends a genesis record that only
-/// exists in this function's own ledger, and `transfer_public` needs no record at all.
+/// Each transaction is built fresh, checked, but never applied to its ledger. Both pay with a
+/// public fee, not a fee record -- see the comment on the equivalent deploy in
+/// `build_chain_fixture` for why.
 fn bench_transaction_verification(c: &mut Criterion) {
     let mut group = c.benchmark_group("transaction_verification");
 
     {
         let rng = &mut TestRng::default();
-        let (ledger, private_key, records) = fresh_ledger(rng);
+        let (ledger, private_key, _records) = fresh_ledger(rng);
         let program = Program::<CurrentNetwork>::from_str(
             r"
 program rest_bench_verify_deploy.aleo;
@@ -324,8 +327,7 @@ function hello:
 ",
         )
         .unwrap();
-        let deploy_tx =
-            ledger.vm().deploy(&private_key, &program, Some(records[0].clone()), 600_000, None, rng).unwrap();
+        let deploy_tx = ledger.vm().deploy(&private_key, &program, None, 600_000, None, rng).unwrap();
 
         group.bench_function("check_transaction_basic(deploy)", |b| {
             b.iter(|| ledger.check_transaction_basic(&deploy_tx, None, rng).unwrap())
