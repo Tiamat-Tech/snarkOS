@@ -35,6 +35,7 @@ use parking_lot::RwLock;
 #[cfg(not(feature = "serial"))]
 use rayon::prelude::*;
 use std::{
+    cmp,
     collections::{HashMap, HashSet},
     num::NonZeroUsize,
     sync::{
@@ -235,10 +236,8 @@ impl<N: Network> Storage<N> {
         }
 
         // Update the storage to the next round.
-        self.update_current_round(next_round);
+        let storage_round = self.update_current_round(next_round);
 
-        // Retrieve the storage round.
-        let storage_round = self.current_round();
         // Retrieve the GC round.
         let gc_round = self.gc_round();
         // Storage is guaranteed to have advanced to at least the next round, since
@@ -275,8 +274,9 @@ impl<N: Network> Storage<N> {
     /// (`increment_to_next_round`) and the sync-applied-block path (`sync_round_with_block`).
     /// `fetch_max` ensures the round only ever advances, regardless of interleaving, instead of a
     /// plain store letting a stale writer regress it.
-    fn update_current_round(&self, next_round: u64) {
-        self.current_round.fetch_max(next_round, Ordering::SeqCst);
+    fn update_current_round(&self, next_round: u64) -> u64 {
+        let previous_value = self.current_round.fetch_max(next_round, Ordering::SeqCst);
+        cmp::max(previous_value, next_round)
     }
 
     /// Update the storage by performing garbage collection based on the next round.
