@@ -1597,7 +1597,11 @@ pub(crate) mod tests {
                         .insert_certificate(certificate, transmissions, Default::default())
                         .expect("Valid certificate rejected");
                 } else {
-                    assert!(storage.insert_certificate(certificate, transmissions, Default::default()).is_err());
+                    let err = storage
+                        .insert_certificate(certificate, transmissions, Default::default())
+                        .expect_err("Certificate with insufficient previous certs was accepted");
+                    assert!(matches!(&err, CheckCertificateError::Other(_)));
+                    assert!(!err.is_benign());
                 }
             }
 
@@ -1608,6 +1612,133 @@ pub(crate) mod tests {
                 previous_certs = new_certs.into_iter().skip(6).collect();
             }
         }
+    }
+
+    /// Verify that inserting the exact same certificate twice returns `CheckCertificateError::SameCertificate`.
+    #[test]
+    fn test_check_certificate_error_same_certificate() {
+        let rng = &mut TestRng::default();
+
+        // Sample a committee.
+        let (committee, private_keys) =
+            snarkvm::ledger::committee::test_helpers::sample_committee_and_keys_for_round(0, 10, rng);
+        // Initialize the ledger.
+        let ledger = Arc::new(MockLedgerService::new(committee));
+        // Initialize the storage.
+        let storage = Storage::<CurrentNetwork>::new(ledger, Arc::new(BFTMemoryService::new()), 1).unwrap();
+
+        // Construct a certificate with a full quorum of signers.
+        let author = &private_keys[0];
+        let other_keys: Vec<_> = private_keys.iter().cloned().filter(|k| k != author).collect();
+        let certificate =
+            sample_batch_certificate_for_round_with_committee(1, Default::default(), author, &other_keys, rng);
+
+        // Construct the sample 'transmissions'.
+        let (_missing_transmissions, transmissions) = sample_transmissions(&certificate, rng);
+        let transmissions: HashMap<_, _> = transmissions.into_iter().map(|(k, (t, _))| (k, t)).collect();
+
+        // Insert the certificate.
+        storage
+            .insert_certificate(certificate.clone(), transmissions.clone(), Default::default())
+            .expect("Valid certificate rejected");
+
+        // Inserting the exact same certificate again must fail with `SameCertificate`.
+        let result = storage.insert_certificate(certificate, transmissions, Default::default());
+        assert!(matches!(result, Err(CheckCertificateError::SameCertificate { .. })));
+    }
+
+    /// Verify that inserting two distinct certificates from the same author in the same round
+    /// returns `CheckCertificateError::SameAuthorAndRound`.
+    #[test]
+    fn test_check_certificate_error_same_author_and_round() {
+        let rng = &mut TestRng::default();
+
+        // Sample a committee.
+        let (committee, private_keys) =
+            snarkvm::ledger::committee::test_helpers::sample_committee_and_keys_for_round(0, 10, rng);
+        // Initialize the ledger.
+        let ledger = Arc::new(MockLedgerService::new(committee));
+        // Initialize the storage.
+        let storage = Storage::<CurrentNetwork>::new(ledger, Arc::new(BFTMemoryService::new()), 1).unwrap();
+
+        // Sample two distinct certificates from the same author for the same round.
+        let author = &private_keys[0];
+        let other_keys: Vec<_> = private_keys.iter().cloned().filter(|k| k != author).collect();
+        let certificate_1 =
+            sample_batch_certificate_for_round_with_committee(1, Default::default(), author, &other_keys, rng);
+        let certificate_2 =
+            sample_batch_certificate_for_round_with_committee(1, Default::default(), author, &other_keys, rng);
+        assert_ne!(certificate_1.id(), certificate_2.id());
+
+        // Insert the first certificate.
+        let (_missing_transmissions, transmissions_1) = sample_transmissions(&certificate_1, rng);
+        let transmissions_1: HashMap<_, _> = transmissions_1.into_iter().map(|(k, (t, _))| (k, t)).collect();
+        storage
+            .insert_certificate(certificate_1, transmissions_1, Default::default())
+            .expect("Valid certificate rejected");
+
+        // Inserting a different certificate from the same author and round must fail with `SameAuthorAndRound`.
+        let (_missing_transmissions, transmissions_2) = sample_transmissions(&certificate_2, rng);
+        let transmissions_2: HashMap<_, _> = transmissions_2.into_iter().map(|(k, (t, _))| (k, t)).collect();
+        let result = storage.insert_certificate(certificate_2, transmissions_2, Default::default());
+        assert!(matches!(result, Err(CheckCertificateError::SameAuthorAndRound { .. })));
+    }
+
+    /// Verify that `insert_certificate` rejects a certificate at or below the GC round with
+    /// `CheckCertificateError::RoundTooLow`.
+    #[test]
+    fn test_check_certificate_error_round_too_low() {
+        let rng = &mut TestRng::default();
+
+        // Sample a committee.
+        let committee = snarkvm::ledger::committee::test_helpers::sample_committee(rng);
+        // Initialize the ledger.
+        let ledger = Arc::new(MockLedgerService::new(committee));
+        // Initialize the storage.
+        let storage = Storage::<CurrentNetwork>::new(ledger, Arc::new(BFTMemoryService::new()), 1).unwrap();
+
+        // Advance the GC round past round 2.
+        storage.garbage_collect_certificates(3).unwrap();
+        assert_eq!(storage.gc_round(), 2);
+
+        // A certificate at or below the GC round must be rejected as `RoundTooLow`, regardless of its content.
+        // Note: round 1 is reserved for the genesis committee and cannot have previous certificates, so round 2
+        // is used here to keep certificate sampling generic (its round is otherwise irrelevant to this check).
+        let certificate =
+            snarkvm::ledger::narwhal::batch_certificate::test_helpers::sample_batch_certificate_for_round(2, rng);
+        let result = storage.insert_certificate(certificate, Default::default(), Default::default());
+        assert!(matches!(result, Err(CheckCertificateError::RoundTooLow { .. })));
+    }
+
+    /// Verify that a genuine validity failure (insufficient signatures to reach quorum) is
+    /// reported as `CheckCertificateError::Other` and is not misclassified as benign.
+    #[test]
+    fn test_check_certificate_error_other() {
+        let rng = &mut TestRng::default();
+
+        // Sample a committee.
+        let (committee, private_keys) =
+            snarkvm::ledger::committee::test_helpers::sample_committee_and_keys_for_round(0, 10, rng);
+        // Initialize the ledger.
+        let ledger = Arc::new(MockLedgerService::new(committee));
+        // Initialize the storage.
+        let storage = Storage::<CurrentNetwork>::new(ledger, Arc::new(BFTMemoryService::new()), 1).unwrap();
+
+        // Sign with too few endorsers to reach the committee's quorum threshold.
+        let author = &private_keys[0];
+        let other_keys: Vec<_> = private_keys[0..=3].iter().cloned().filter(|k| k != author).collect();
+        let certificate =
+            sample_batch_certificate_for_round_with_committee(1, Default::default(), author, &other_keys, rng);
+
+        // Construct the sample 'transmissions'.
+        let (_missing_transmissions, transmissions) = sample_transmissions(&certificate, rng);
+        let transmissions: HashMap<_, _> = transmissions.into_iter().map(|(k, (t, _))| (k, t)).collect();
+
+        let err = storage
+            .insert_certificate(certificate, transmissions, Default::default())
+            .expect_err("Certificate without quorum was accepted");
+        assert!(matches!(&err, CheckCertificateError::Other(_)));
+        assert!(!err.is_benign());
     }
 
     /// Verify that `insert_certificate` rejects certs that do not increment the round number.
