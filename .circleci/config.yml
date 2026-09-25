@@ -849,40 +849,41 @@ workflows:
           filters:
             branches:
               only:
-                - main_net_v4101
                 - canary
                 - testnet
                 - mainnet
                 - staging
+                - bruno/decouple
 
       - chaotic-minority-reset-test:
           filters:
             branches:
               only:
-                - main_net_v4101
                 - canary
                 - testnet
                 - mainnet
                 - staging
+                - bruno/decouple
 
       - chaotic-majority-reset-test:
           filters:
             branches:
               only:
-                - main_net_v4101
                 - canary
                 - testnet
                 - mainnet
                 - staging
+                - bruno/decouple
+
       - upgrade-test:
           filters:
             branches:
               only:
-                - main_net_v4101
                 - canary
                 - testnet
                 - mainnet
                 - staging
+                - bruno/decouple
 
   snarkos-workflow:
     jobs:
@@ -897,7 +898,6 @@ workflows:
           filters:
             branches:
               only:
-                - main_net_v4101
                 - canary
                 - testnet
                 - mainnet
