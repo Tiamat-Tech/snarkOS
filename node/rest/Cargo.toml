@@ -143,5 +143,12 @@ features = [ "test-helpers" ]
 workspace = true
 features = [ "test-helpers" ]
 
+[[bench]]
+name = "handlers"
+harness = false
+
+[dev-dependencies.criterion]
+workspace = true
+
 [build-dependencies.built]
 workspace = true

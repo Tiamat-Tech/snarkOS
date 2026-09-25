@@ -984,27 +984,27 @@ impl<N: Network, C: ConsensusStorage<N>, R: Routing<N>> Rest<N, C, R> {
             ))));
         }
 
-        // Deserialize the commitments from the query.
-        let commitments = match tokio::task::spawn_blocking(move || {
-            commitments
+        // Parse the commitments and retrieve their state paths in a blocking task.
+        let get_json_state_paths = move || -> Result<ErasedJson, RestError> {
+            let commitments = commitments
                 .commitments
                 .iter()
                 .map(|s| {
                     s.parse::<Field<N>>()
                         .map_err(|err| RestError::unprocessable_entity(err.context(format!("Invalid commitment: {s}"))))
                 })
-                .collect::<Result<Vec<_>, _>>()
-        })
-        .await
-        {
-            Ok(Ok(commitments)) => commitments,
-            Ok(Err(err)) => {
-                return Err(RestError::internal_server_error(anyhow!(err).context("Unable to parse commitments")));
-            }
-            Err(err) => return Err(RestError::internal_server_error(anyhow!(err).context("Tokio error"))),
+                .collect::<Result<Vec<_>, _>>()?;
+
+            Ok(ErasedJson::pretty(rest.ledger.get_state_paths_for_commitments(&commitments)?))
         };
 
-        Ok(ErasedJson::pretty(rest.ledger.get_state_paths_for_commitments(&commitments)?))
+        match tokio::task::spawn_blocking(get_json_state_paths).await {
+            Ok(json) => json,
+            Err(err) => {
+                let err: anyhow::Error = err.into();
+                Err(RestError::internal_server_error(err.context("Failed to get state paths for commitments")))
+            }
+        }
     }
 
     /// GET /<network>/stateRoot/latest
